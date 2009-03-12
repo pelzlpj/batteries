@@ -3,6 +3,7 @@
  * Copyright (C) 2003 Nicolas Cannasse
  *               2008 Philippe Strauss
  *               2008 David Teller
+ *               2009 Paul Pelzl
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,70 +29,7 @@ let weak_create size     = InnerWeaktbl.create size
 let weak_add set element = InnerWeaktbl.add set element ()
 let weak_iter f s        = InnerWeaktbl.iter (fun x _ -> f x) s
 
-type input = {
-  mutable in_read  : unit -> char;
-  mutable in_input : string -> int -> int -> int;
-  mutable in_close : unit -> unit;
-  in_id: int;(**A unique identifier.*)
-  in_upstream: input weak_set
-}
-
-type 'a output = {
-  mutable out_write : char -> unit;
-  mutable out_output: string -> int -> int -> int;
-  mutable out_close : unit -> 'a;
-  mutable out_flush : unit -> unit;
-  out_id:    int;(**A unique identifier.*)
-  out_upstream:unit output weak_set
-    (**The set of outputs which have been created to write to this output.*)
-}
-
-
-module Input =
-struct
-  type t = input
-  let compare x y = x.in_id - y.in_id
-  let hash    x   = x.in_id
-  let equal   x y = x.in_id = y.in_id
-end
-
-module Output =
-struct
-  type t = unit output
-  let compare x y = x.out_id - y.out_id
-  let hash    x   = x.out_id
-  let equal   x y = x.out_id = y.out_id
-end
-
-
-
-(**All the currently opened outputs -- used to permit [flush_all] and [close_all].*)
-(*module Inputs = Weaktbl.Make(Input)*)
-module Outputs= Weak.Make(Output)
-
-
-
-(** {6 Primitive operations}*)
-
-external noop        : unit      -> unit        = "%ignore"
-external cast_output : 'a output -> unit output = "%identity"
-let lock = ref Concurrent.nolock
-
-
-let outputs = Outputs.create 32
-let outputs_add out =
-  Concurrent.sync !lock (Outputs.add outputs) out
-
-let outputs_remove out =
-  Concurrent.sync !lock (Outputs.remove outputs) out
-
-
-exception No_more_input
-exception Input_closed
-exception Output_closed
-
-
-
+external noop : unit -> unit = "%ignore"
 
 let post_incr r =
   let result = !r in
@@ -105,92 +43,209 @@ let post r op =
 let uid = ref 0
 let uid () = post_incr uid
 
-let close_in i =
-	let f _ = raise Input_closed in
-	i.in_close();
-	i.in_read <- f;
-	i.in_input <- f;
-	i.in_close <- noop (*Double closing is not a problem*)
+
+exception No_more_input
+exception Input_closed
+exception Output_closed
 
 
-let wrap_in ~read ~input ~close ~underlying =
-  let result = 
-  {
-    in_read     = read;
-    in_input    = input;
-    in_close    = close;
-    in_id       = uid ();
-    in_upstream = weak_create 2
-  }
-in 
-    Concurrent.sync !lock (List.iter (fun x -> weak_add x.in_upstream result)) underlying;
-    Gc.finalise close_in result;
-    result
+(************************************************************************
+ * I/O class types.  The following types define the sets of capabilities
+ * that various I/O objects may expose.
+ ************************************************************************)
 
-let inherit_in ?read ?input ?close inp =
-  let read = match read  with None -> inp.in_read | Some f -> f
-  and input= match input with None -> inp.in_input| Some f -> f
-  and close= match close with None -> inp.in_close| Some f -> f
-  in  wrap_in ~read ~input ~close ~underlying:[inp]
+class type io_handle = object
+  method get_id             : unit      -> int
+  method flush              : unit      -> unit
+  method close_unit         : unit      -> unit
+  method register_dependent : io_handle -> unit
+end
 
+class type ['a] io_base = object
+  inherit io_handle
+  method close : unit -> 'a
+end
+
+class type readable = object
+  method read  : unit -> char
+  method input : string -> int -> int -> int
+end
+
+class type writable = object
+  method write  : char -> unit
+  method output : string -> int -> int -> int
+end
+
+class type ['a] input = object
+  inherit readable
+  inherit ['a] io_base
+end
+
+class type ['a] output = object
+  inherit writable
+  inherit ['a] io_base
+end
+
+
+let cast_io io = (io :> io_handle)
+
+
+(************************************************************************
+ * IO object registration.  The following weak table and associated
+ * functions track all the open IO channels, permitting the
+ * implementation of [flush_all] and [close_all].
+ ************************************************************************)
+
+module IOHandle = struct
+  type t = io_handle
+  let compare x y = (x#get_id ()) - (y#get_id ())
+  let hash    x   = x#get_id ()
+  let equal   x y = x#get_id () = y#get_id ()
+end
+
+module IOHandleTable = Weak.Make(IOHandle)
+
+let io_handle_table = IOHandleTable.create 32
+let lock            = ref Concurrent.nolock
+
+let io_handle_table_add    io = Concurrent.sync !lock (IOHandleTable.add    io_handle_table) io
+let io_handle_table_remove io = Concurrent.sync !lock (IOHandleTable.remove io_handle_table) io
+
+
+
+(************************************************************************
+ * I/O class declarations.  This module is built on top of a small
+ * number of standard I/O classes which implement the [input] and
+ * [output] class type interfaces.
+ ************************************************************************)
+
+class virtual std_io_handle = object (self)
+  val id            = uid ()
+  val dependents    = weak_create 2;
+  method get_id ()  = id
+  method flush      = noop
+  method register_dependent (dep : io_handle) = weak_add dependents dep
+  method virtual close_unit : unit -> unit
+
+  initializer io_handle_table_add (self :> io_handle)
+end
+
+
+class virtual ['a] std_io_base ~flush ~close ~forbidden () = object (self)
+  inherit std_io_handle
+
+  val mutable flush_f : (unit -> unit) = flush
+  val mutable close_f : (unit -> 'a)   = close
+  val mutable acc = None
+  method flush = flush_f
+  method close : (unit -> 'a) = (fun () ->
+                    match acc with
+                    | None ->
+                        let result = 
+                          io_handle_table_remove (self :> io_handle);
+                          weak_iter (fun dep -> dep#close_unit ()) dependents;
+                          flush_f ();
+                          close_f ()
+                        in
+                        acc      <- Some result;
+                        close_f  <- forbidden;
+                        flush_f  <- noop;  (* Repeated flush is acceptable *)
+                        result
+                    | Some data ->
+                        data)
+  method close_unit () = let _ = self#close () in ()
+end
+
+
+(** The standard class of read-only inputs. *)
+class ['a] std_input ~read ~input ~close () = object
+  inherit ['a] std_io_base ~flush:noop ~close ~forbidden:(fun _ -> raise Input_closed) () as super
+
+  val mutable read_f  : (unit -> char)                = read
+  val mutable input_f : (string -> int -> int -> int) = input
+  method read  = read_f
+  method input = input_f
+  method close () = match acc with
+                    | None ->
+                        let result = super#close () in
+                        let forbidden _ = raise Input_closed in
+                        read_f  <- forbidden;
+                        input_f <- forbidden;
+                        result
+                    | Some data ->
+                        data
+end
+
+
+(** The standard class of write-only outputs. *)
+class ['a] std_output ~write ~output ~flush ~close () = object
+  inherit ['a] std_io_base ~flush ~close ~forbidden:(fun _ -> raise Output_closed) () as super
+
+  val mutable write_f  : (char -> unit)                = write
+  val mutable output_f : (string -> int -> int -> int) = output
+  method write  = write_f
+  method output = output_f
+  method close () = match acc with
+                    | None ->
+                        let result = super#close () in
+                        let forbidden _ = raise Output_closed in
+                        write_f  <- forbidden;
+                        output_f <- forbidden;
+                        result
+                    | Some data ->
+                        data
+end
+
+
+
+(************************************************************************
+ * Standard IO function implementations.
+ ************************************************************************)
+
+let close io = io#close ()
+
+let close_io = close (* disambiguation *)
+
+let register_io io (underlying : #io_handle list) =
+  let base = cast_io io in
+  Concurrent.sync !lock (List.iter (fun x -> x#register_dependent base)) underlying;
+  Gc.finalise (fun x -> ignore (close_io x)) io;
+  io
+
+let wrap_in ~read ~input ~(close:(unit->'a)) ~underlying =
+  let in_obj = new std_input ~read ~input ~close () in
+  ((register_io in_obj underlying) :> 'a input)
+
+let wrap_out ~write ~output ~flush ~close ~underlying =
+  let out_obj = new std_output ~write ~output ~flush ~close () in
+  ((register_io out_obj underlying) :> 'a output)
+
+let inherit_in ?read ?input ?close (inp : 'a #input) =
+  let read = match read  with None -> inp#read | Some f -> f
+  and input= match input with None -> inp#input| Some f -> f
+  and close= match close with None -> inp#close| Some f -> f
+  in  wrap_in ~read ~input ~close ~underlying:[cast_io inp]
+
+let inherit_out ?write ?output ?flush ?close out =
+  let write = match write  with None -> out#write | Some f -> f
+  and output= match output with None -> out#output| Some f -> f
+  and flush = match flush  with None -> out#flush | Some f -> f
+  and close = match close  with None -> out#close | Some f -> f
+  in wrap_out ~write ~output ~flush ~close ~underlying:[cast_io out]
 
 let create_in ~read ~input ~close =
   wrap_in ~read ~input ~close ~underlying:[]
 
-(*For recursively closing outputs, we need either polymorphic
-  recursion or a hack. Well, a hack it is.*)
-
-(*Close a [unit output] -- note that this works for any kind of output,
-  thanks to [cast_output], but this can't return a proper result.*)
-let rec close_unit (o:unit output) : unit =
-  let forbidden _ = raise Output_closed in
-    o.out_flush ();
-    weak_iter close_unit o.out_upstream;
-    let r = o.out_close() in
-      o.out_write  <- forbidden;
-      o.out_output <- forbidden;
-      o.out_close  <- (fun _ -> r) (*Closing again is not a problem*);
-      o.out_flush  <- noop         (*Flushing again is not a problem*);
-      ()
-
-(*Close a ['a output] -- first close it as a [unit output] then
-  recover the result.*)
-let close_out o =
-  close_unit (cast_output o);
-  o.out_close ()
-
-
-let wrap_out ~write ~output ~flush ~close ~underlying  =
-  let rec out = 
-    {
-      out_write  = write;
-      out_output = output;
-      out_close  = (fun () ->
-		      outputs_remove (cast_output out);
-		      close ());
-      out_flush  = flush;
-      out_id     = uid ();
-      out_upstream = weak_create 2
-    }
-  in 
-  let o = cast_output out in
-    Concurrent.sync !lock (List.iter (fun x -> weak_add x.out_upstream o)) underlying;
-    outputs_add (cast_output out); 
-    Gc.finalise (fun _ -> ignore (close_out out)) 
-      out;
-    out
-
-let inherit_out ?write ?output ?flush ?close out =
-  let write = match write  with None -> out.out_write | Some f -> f
-  and output= match output with None -> out.out_output| Some f -> f
-  and flush = match flush  with None -> out.out_flush | Some f -> f
-  and close = match close  with None -> out.out_close | Some f -> f
-  in wrap_out ~write ~output ~flush ~close ~underlying:[out]
-
 let create_out ~write ~output ~flush ~close =
   wrap_out ~write ~output ~flush ~close ~underlying:[]
 
-let read i = i.in_read()
+let unit_in inp = wrap_in ~read:inp#read ~input:inp#input 
+  ~close:noop ~underlying:[cast_io inp]
+
+let unit_out out = wrap_out ~write:out#write ~output:out#output
+  ~flush:out#flush ~close:noop ~underlying:[cast_io out]
+
+let read i = i#read ()
 
 let nread i n =
 	if n < 0 then invalid_arg "IO.nread";
@@ -202,7 +257,7 @@ let nread i n =
 	let p = ref 0 in
 	try
 		while !l > 0 do
-			let r = i.in_input s !p !l in
+			let r = i#input s !p !l in
 			if r = 0 then raise No_more_input;
 			p := !p + r;
 			l := !l - r;
@@ -219,7 +274,7 @@ let really_output o s p l' =
    	let l = ref l' in
 	let p = ref p in
 	while !l > 0 do 
-		let w = o.out_output s !p !l in
+		let w = o#output s !p !l in
 		if w = 0 then raise Sys_blocked_io;
 		p := !p + w;
 		l := !l - w;
@@ -232,7 +287,7 @@ let input i s p l =
 	if l = 0 then
 		0
 	else
-		i.in_input s p l
+		i#input s p l
 
 let really_input i s p l' =
 	let sl = String.length s in
@@ -240,7 +295,7 @@ let really_input i s p l' =
 	let l = ref l' in
 	let p = ref p in
 	while !l > 0 do
-		let r = i.in_input s !p !l in
+		let r = i#input s !p !l in
 		if r = 0 then raise Sys_blocked_io;
 		p := !p + r;
 		l := !l - r;
@@ -257,13 +312,13 @@ let really_nread i n =
 	s
 
 
-let write o x = o.out_write x
+let write o x = o#write x
 
 let nwrite o s =
 	let p = ref 0 in
 	let l = ref (String.length s) in
 	while !l > 0 do
-		let w = o.out_output s !p !l in
+		let w = o#output s !p !l in
 		if w = 0 then raise Sys_blocked_io;
 		p := !p + w;
 		l := !l - w;
@@ -274,15 +329,15 @@ let write_buf o b = nwrite o (Buffer.contents b)
 let output o s p l =
 	let sl = String.length s in
 	if p + l > sl || p < 0 || l < 0 then invalid_arg "IO.output";
-	o.out_output s p l
+	o#output s p l
 
-let flush o = o.out_flush()
+let flush o = o#flush()
 
 let flush_all () =
-  Concurrent.sync !lock ( Outputs.iter (fun o -> try flush o with _ -> ())) outputs
+  Concurrent.sync !lock (IOHandleTable.iter (fun x -> try x#flush ()      with _ -> ())) io_handle_table
 
 let close_all () =
-  Concurrent.sync !lock  (Outputs.iter (fun o -> try close_out o with _ -> ())) outputs
+  Concurrent.sync !lock (IOHandleTable.iter (fun x -> try x#close_unit () with _ -> ())) io_handle_table
 
 let read_all i =
 	let maxlen = 1024 in
@@ -333,7 +388,7 @@ let default_buffer_size = 16 (*Arbitrary number. If you replace it, just
 			       don't put something too small, i.e. anything
 			       smaller than 10 is probably a bad idea.*)
 
-let output_string() =
+let output_string () =
   let b = Buffer.create default_buffer_size in
     create_out
       ~write:  (fun c -> Buffer.add_char b c )
@@ -350,34 +405,35 @@ let output_buffer buf =
     ~close: (fun () -> Buffer.contents buf)
     ~flush: noop
 
-(** A placeholder used to allow recursive use of [self]
-    in an [input_channel]*)
-let placeholder_in = 
-  { in_read  = (fun () -> ' ');
-    in_input = (fun _ _ _ -> 0);
-    in_close = noop;
-    in_id    = (-1);
-    in_upstream= weak_create 0 }
 let input_channel ?(autoclose=true) ?(cleanup=false) ch =
-  let me = ref placeholder_in (*placeholder*)
+  let me = ref None in
   in let result = 
   create_in
     ~read:(fun () -> try input_char ch
-	   with End_of_file -> 
-	     if autoclose then close_in !me;
-	     raise No_more_input)
+            with End_of_file -> 
+              if autoclose then match !me with
+                | None -> ()
+                | Some io -> close io
+              else
+                ();
+              raise No_more_input)
     ~input:(fun s p l ->
-	      let n = Pervasives.input ch s p l in
-		if n = 0 then 
-		  begin
-                    if autoclose then close_in !me else ();
-		    raise No_more_input
-		  end
-		else n)
+              let n = Pervasives.input ch s p l in
+                if n = 0 then 
+                  begin
+                    if autoclose then match !me with
+                      | None -> ()
+                      | Some io -> close io
+                    else
+                      ();
+                    raise No_more_input
+                  end
+                else n)
     ~close:(if cleanup then fun () -> Pervasives.close_in ch else ignore)
   in
-    me := result;
-    result
+  me := Some result;
+  result
+
 
 let output_channel ?(cleanup=false) ch =
     create_out
@@ -434,10 +490,10 @@ let pipe() =
 
 exception Overflow of string
 
-let read_byte i = int_of_char (i.in_read())
+let read_byte i = int_of_char (i#read())
 
 let read_signed_byte i =
-	let c = int_of_char (i.in_read()) in
+	let c = int_of_char (i#read()) in
 	if c land 128 <> 0 then
 		c - 256
 	else
@@ -446,7 +502,7 @@ let read_signed_byte i =
 let read_string i =
 	let b = Buffer.create 8 in
 	let rec loop() =
-		let c = i.in_read() in
+		let c = i#read() in
 		if c <> '\000' then begin
 			Buffer.add_char b c;
 			loop();
@@ -459,7 +515,7 @@ let read_line i =
 	let b = Buffer.create 8 in
 	let cr = ref false in
 	let rec loop() =
-		let c = i.in_read() in
+		let c = i#read() in
 		match c with
 		| '\n' ->
 			()
@@ -611,50 +667,50 @@ module Printf :
 sig
   type ('a, 'b, 'c) t = ('a, 'b, 'c) Pervasives.format
 
-  val printf: ('b, 'a output, unit) format -> 'b
+  val printf: ('b, 'a #output, unit) format -> 'b
     (**The usual [printf] function, prints to
        [stdout].*)
 
-  val eprintf: ('b, 'a output, unit) format -> 'b
+  val eprintf: ('b, 'a #output, unit) format -> 'b
     (**The usual [eprintf] function, prints to
        [stderr].*)
 
-  val sprintf:  ('a, unit, string) format -> 'a
+  val sprintf:  ('a, unit, string) t -> 'a
     (** As [fprintf] but outputs are replaced with
 	strings. In particular, any function called with 
 	[%a] should have type [unit -> string].*)
 
-  val sprintf2: ('a, 'b output, unit, string) format4 -> 'a
+  val sprintf2: ('a, 'b #output, unit, string) format4 -> 'a
     (**As [printf] but produces a string instead
        of printing to the output. By opposition to
        [sprintf], only the result is changed with
        respect to [printf], not the inner workings.*)
 
 
-  val fprintf: 'a output -> ('b, 'a output, unit) format -> 'b
+  val fprintf: ('a #output as 'out) -> ('b, 'out, unit) format -> 'b
     (**General printf, prints to any output.*)
 
-  val ifprintf: _        -> ('b, 'a output, unit) format -> 'b
+  val ifprintf: _        -> ('b, 'a #output, unit) format -> 'b
     (**As [fprintf] but doesn't actually print anything.
        Sometimes useful for debugging.*)
 
   val bprintf: Buffer.t  -> ('a, Buffer.t, unit) format -> 'a
     (**As [fprintf], but with buffers instead of outputs.*)
 
-  val bprintf2: Buffer.t  -> ('b, 'a output, unit) format -> 'b
+  val bprintf2: Buffer.t  -> ('b, 'a #output, unit) format -> 'b
     (**As [printf] but writes to a buffer instead
        of printing to the output. By opposition to
        [bprintf], only the result is changed with
        respect to [printf], not the inner workings.*)
 
-  val kfprintf : ('a output -> 'b) -> 'a output -> ('c, 'a output, unit, 'b) format4 -> 'c
+  val kfprintf : (('a #output as 'out) -> 'b) -> 'out -> ('c, 'out, unit, 'b) format4 -> 'c
     (**Same as [fprintf], but instead of returning immediately, passes the [output] to its first
        argument at the end of printing.*)
 
   val ksprintf: (string -> 'a) -> ('b, unit, string, 'a) format4 -> 'b
     (** Same as [sprintf] above, but instead of returning the string,
 	passes it to the first argument. *)
-  val ksprintf2: (string -> 'b) -> ('c, 'a output, unit, 'b) format4 -> 'c
+  val ksprintf2: (string -> 'b) -> ('c, 'a #output, unit, 'b) format4 -> 'c
     (** Same as [sprintf2] above, but instead of returning the string,
 	passes it to the first argument. *)
 
@@ -662,13 +718,13 @@ sig
        Buffer.t -> ('b, Buffer.t, unit, 'a) format4 -> 'b
     (** Same as [bprintf], but instead of returning immediately,
 	passes the buffer to its first argument at the end of printing. *)
-  val kbprintf2 : (Buffer.t -> 'b) ->  Buffer.t -> ('c, 'a output, unit, 'b) format4 -> 'c
+  val kbprintf2 : (Buffer.t -> 'b) ->  Buffer.t -> ('c, 'a #output, unit, 'b) format4 -> 'c
     (** Same as [bprintf2], but instead of returning immediately,
 	passes the buffer to its first argument at the end of printing.*)
 
   val kprintf : (string -> 'a) -> ('b, unit, string, 'a) format4 -> 'b
 
-  val mkprintf: ('a output -> 'b) -> 'a output -> ('c, 'a output, unit, 'b) format4 -> 'c
+  val mkprintf : (('a #output as 'out) -> 'b) -> 'out -> ('c, 'out, unit, 'b) format4 -> 'c
 end
 =
 struct
@@ -1128,7 +1184,7 @@ let eprintf     fmt = fprintf stderr fmt
 let ifprintf _  fmt = fprintf stdnull fmt
 let ksprintf2 k fmt =
   let out = output_string () in
-    mkprintf (fun out -> k (close_out out)) out fmt
+    mkprintf (fun out -> k (close out)) out fmt
 let kbprintf2 k buf fmt =
   let out = output_buffer buf in
     mkprintf (fun out -> k buf) out fmt
@@ -1141,7 +1197,7 @@ let bprintf2 buf fmt = kbprintf2 ignore buf fmt
 [
 let sprintf2    fmt = 
   let out = output_string () in
-    mkprintf (fun out -> close_out out) out fmt
+    mkprintf (fun out -> close out) out fmt
 ]
 *)
 (**
@@ -1163,5 +1219,5 @@ let kbprintf        = Printf.kbprintf
 let kprintf         = Printf.kprintf
 end
 
-let get_output out = out.out_output
-let get_flush  out = out.out_flush
+let get_output out = out#output
+let get_flush  out = out#flush

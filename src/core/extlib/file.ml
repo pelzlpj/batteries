@@ -123,8 +123,8 @@ let with_do opener closer x f =
   let file = opener x in
     Std.finally (fun () -> closer file) f file
  
-let with_file_in  ?mode ?perm  x = with_do (open_in  ?mode ?perm) close_in x
-let with_file_out ?mode ?perm  x = with_do (open_out ?mode ?perm) close_out x
+let with_file_in  ?mode ?perm  x = with_do (open_in  ?mode ?perm) IO.close x
+let with_file_out ?mode ?perm  x = with_do (open_out ?mode ?perm) IO.close x
 
 let lines_of file = IO.lines_of (open_in file)
 
@@ -151,7 +151,7 @@ let open_temporary_out ?mode ?perm ?(prefix="ocaml") ?(suffix="tmp") () : (_ out
       | Some l when List.mem `delete_on_exit l -> 
 	  Pervasives.at_exit (fun () -> 
 				try
-				  IO.close_out out;
+				  IO.close out;
 				  Sys.remove name
 				with
 				    _ -> ())
@@ -160,7 +160,7 @@ let open_temporary_out ?mode ?perm ?(prefix="ocaml") ?(suffix="tmp") () : (_ out
 
 let with_temporary_out ?mode ?perm ?prefix ?suffix f =
   let (file, name) = open_temporary_out ?mode ?perm ?prefix ?suffix () in
-    Std.finally (fun () -> close_out file)
+    Std.finally (fun () -> IO.close file)
       (fun (file, name) -> f file name)
       (file, name)
 

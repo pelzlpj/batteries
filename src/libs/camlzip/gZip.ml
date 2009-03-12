@@ -51,7 +51,7 @@ let uncompress inp =
 let gzip_compress ?level out =
   let error exn =
     raise (Compress.Compression_error ("zlib compression error", Some exn)) in
-  let camlzip_out = InnerGZip.open_output ?level (cast_output out) in
+  let camlzip_out = InnerGZip.open_output ?level (IO.unit_out out) in
   let write c =
     try InnerGZip.output_char camlzip_out c
     with Zlib.Error _ as exn -> error exn in
@@ -74,10 +74,10 @@ let open_out ?mode ?perm fname = compress (File.open_out ?mode ?perm fname)
 
 let with_in inp f =
   let input = uncompress inp in
-  Std.finally (fun () -> close_in input)
+  Std.finally (fun () -> IO.close input)
     f input
 
 let with_out out f =
   let output = compress out in
-  Std.finally (fun () -> close_out output)
+  Std.finally (fun () -> IO.close output)
     f output

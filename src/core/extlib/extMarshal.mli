@@ -63,8 +63,8 @@ type extern_flags = Marshal.extern_flags =
   | Closures                            (** Send function closures *)
 (** The flags to the [Marshal.to_*] functions below. *)
 
-val output: _ InnerIO.output -> ?sharing:bool -> ?closures:bool -> 'a -> unit
-  (** [output out v] writes the representation of [v] on [chan]. 
+val output: _ #InnerIO.output -> ?sharing:bool -> ?closures:bool -> 'a -> unit
+  (** [output out v] writes the representation of [v] on [out]. 
 
       @param sharing If [true] (default value), circularities
       and sharing inside the value [v] are detected and preserved
@@ -88,7 +88,7 @@ val output: _ InnerIO.output -> ?sharing:bool -> ?closures:bool -> 'a -> unit
       un-marshaling time, using an MD5 digest of the code transmitted
       along with the code position.) *)
 
-val input : InnerIO.input -> 'a
+val input : _ #InnerIO.input -> 'a
   (** [input inp] reads from [inp] the
       byte representation of a structured value, as produced by
       one of the [Marshal.to_*] functions, and reconstructs and
@@ -127,10 +127,10 @@ val total_size : string -> int -> int
     Prefer using {!output} and {!input}.
 *)
 
-val to_channel : _ InnerIO.output -> 'a -> extern_flags list -> unit
+val to_channel : _ #InnerIO.output -> 'a -> extern_flags list -> unit
   (** @deprecated Use {!output} instead *)
 
-val from_channel : InnerIO.input -> 'a
+val from_channel : _ #InnerIO.input -> 'a
   (** @deprecated Use {!input} instead *)
 
 

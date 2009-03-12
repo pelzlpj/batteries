@@ -102,12 +102,44 @@ I    {!flush_out}.
 open ExtUChar
 open InnerIO
 
-type input = InnerIO.input
-(** The abstract input type. *)
+class type io_handle = object
+  method get_id             : unit      -> int
+  method flush              : unit      -> unit
+  method close_unit         : unit      -> unit
+  method register_dependent : io_handle -> unit
+end
+(** The base class of all IO objects, providing cleanup and dependency tracking. *)
 
-type 'a output = 'a InnerIO.output
-(** The abstract output type, ['a] is the accumulator data, it is returned
-	when the [close_out] function is called. *)
+class type ['a] io_base = object
+  inherit io_handle
+  method close : unit -> 'a
+end
+(** A parameterized IO base class which provides access to accumulator data. *)
+
+class type readable = object
+  method read  : unit -> char
+  method input : string -> int -> int -> int
+end
+(** The IO capability class which encapsulates reading of data. *)
+
+class type writable = object
+  method write  : char -> unit
+  method output : string -> int -> int -> int
+end
+(** The IO capability class which encapsulates writing of data. *)
+
+class type ['a] input = object
+  inherit readable
+  inherit ['a] io_base
+end
+(** The standard IO class representing readable channels. *)
+
+class type ['a] output = object
+  inherit writable
+  inherit ['a] io_base
+end
+(** The standard IO class representing writable channels. *)
+
 
 exception No_more_input
 (** This exception is raised when reading on an input with the [read] or
@@ -121,7 +153,7 @@ exception Output_closed
 
 (** {6 Standard inputs/outputs} *)
 
-val stdin : input
+val stdin : unit input
 (** Standard input, as per Unix/Windows conventions (by default, keyboard).*)
 
 val stdout: unit output
@@ -142,21 +174,21 @@ val stdnull: unit output
 
 (** {6 Standard API} *)
 
-val read : input -> char
+val read : _ #input -> char
 (** Read a single char from an input or raise [No_more_input] if
   no input available. *)
 
-val nread : input -> int -> string
+val nread : _ #input -> int -> string
 (** [nread i n] reads a string of size up to [n] from an input.
   The function will raise [No_more_input] if no input is available.
   It will raise [Invalid_argument] if [n] < 0. *)
 
-val really_nread : input -> int -> string
+val really_nread : _ #input -> int -> string
 (** [really_nread i n] reads a string of exactly [n] characters
   from the input. Raises [No_more_input] if at least [n] characters are
   not available. Raises [Invalid_argument] if [n] < 0. *)
 
-val input : input -> string -> int -> int -> int
+val input : _ #input -> string -> int -> int -> int
   (** [input i s p l] reads up to [l] characters from the given input,
       storing them in string [s], starting at character number [p]. It
       returns the actual number of characters read (which may be 0) or
@@ -167,37 +199,34 @@ val input : input -> string -> int -> int -> int
 
   *)
 
-val really_input : input -> string -> int -> int -> int
+val really_input : _ #input -> string -> int -> int -> int
   (** [really_input i s p l] reads exactly [l] characters from the given input,
       storing them in the string [s], starting at position [p]. For consistency with
       {!IO.input} it returns [l]. Raises [No_more_input] if at [l] characters are
       not available. Raises [Invalid_argument] if [p] and [l] do not designate a
       valid substring of [s]. *)
 
-val close_in : input -> unit
-(** Close the input. It can no longer be read from. *)
-
-val write : 'a output -> char -> unit
+val write : 'a #output -> char -> unit
 (** Write a single char to an output. *)
 
-val nwrite : 'a output -> string -> unit
+val nwrite : 'a #output -> string -> unit
 (** Write a string to an output. *)
 
-val write_buf: 'a output -> Buffer.t -> unit
+val write_buf: 'a #output -> Buffer.t -> unit
 (** Write the contents of a buffer to an output.*)
 
-val output : 'a output -> string -> int -> int -> int
+val output : 'a #output -> string -> int -> int -> int
 (** [output o s p l] writes up to [l] characters from string [s], starting at
   offset [p]. It returns the number of characters written. It will raise
   [Invalid_argument] if [p] and [l] do not designate a valid substring of [s]. *)
 
-val really_output : 'a output -> string -> int -> int -> int
+val really_output : 'a #output -> string -> int -> int -> int
 (** [really_output o s p l] writes exactly [l] characters from string [s] onto
   the the output, starting with the character at offset [p]. For consistency with
   {!IO.output} it returns [l]. Raises [Invalid_argument] if [p] and [l] do not
   designate a valid substring of [s]. *)
 
-val flush : 'a output -> unit
+val flush : 'a #output -> unit
 (** Flush an output.
 
     If previous write operations have caused errors, this may trigger an exception.*)
@@ -206,12 +235,12 @@ val flush_all : unit -> unit
 (** Flush all outputs, ignore errors. *)
 
 
-val close_out : 'a output -> 'a
-(** Close the output and return its accumulator data.
+val close : 'a #io_base -> 'a
+(** Close the IO object and return its accumulator data.
 
-    The output is flushed before being closed and can no longer be
-    written. Attempting to flush or write after the output has been
-    closed will have no effect.*)
+    The object is flushed (as necessary) before being closed and can no longer
+    be read from or written to. Attempting to flush or close after the output
+    has been closed will have no effect.*)
 
 (**/**)
 val close_all : unit -> unit
@@ -227,7 +256,7 @@ val close_all : unit -> unit
     To open a file for reading/writing, see {!File.open_file_in}
     and {!File.open_file_out}*)
 
-val input_string : string -> input
+val input_string : string -> unit input
 (** Create an input that will read from a string. *)
 
 val output_string : unit -> string output
@@ -240,18 +269,18 @@ val output_buffer : Buffer.t -> string output
     -- the buffer remains usable.*)
     
 
-val input_enum : char Enum.t -> input
+val input_enum : char Enum.t -> unit input
 (** Create an input that will read from an [enum]. *)
 
 val output_enum : unit -> char Enum.t output
 (** Create an output that will write into an [enum]. The 
     final enum is returned when the output is closed. *)
 
-val combine : ('a output * 'b output) -> ('a * 'b) output
+val combine : ('a #output * 'b #output) -> ('a * 'b) output
 (** [combine (a,b)] creates a new [output] [c] such that
     writing to [c] will actually write to both [a] and [b] *)
 
-val tab_out : ?tab:char -> int -> 'a output -> unit output
+val tab_out : ?tab:char -> int -> 'a #output -> unit output
   (** Create an output shifted to the right by a number of white spaces
       (or [tab], if given).
 
@@ -263,49 +292,48 @@ val tab_out : ?tab:char -> int -> 'a output -> unit output
       closing [out] closes [tab_out n out].
   *)
 
-(*val repeat: int -> 'a output -> unit output
+(*val repeat: int -> 'a #output -> unit output
 (** [repeat n out] create an output in which every character or string is repeated 
     [n] times to [out].*)*)
 
 (** {6 Utilities} *)
 
-val read_all : input -> string
+val read_all : _ #input -> string
 (** read all the contents of the input until [No_more_input] is raised. *)
 
-val read_uall : input -> Rope.t
+val read_uall : _ #input -> Rope.t
 (** Read the whole contents of a UTF-8 encoded input*)
 
-val pipe : unit -> input * unit output
+val pipe : unit -> unit input * unit output
 (** Create a pipe between an input and an ouput. Data written from
     the output can be read from the input. 
 *)
 
-val copy : ?buffer:int -> input -> _ output -> unit
+val copy : ?buffer:int -> _ #input -> _ output -> unit
 (** Read everything from an input and copy it to an output.
 
     @param buffer The size of the buffer to use for copying, in
     bytes. By default, this is 4,096b.
 *)
 
-val pos_in : input -> input * (unit -> int)
+val pos_in : _ #input -> unit input * (unit -> int)
   (** Create an input that provide a count function of the number of bytes
       read from it. *)
 
-val progress_in : input -> (unit -> unit) -> input 
+val progress_in : _ #input -> (unit -> unit) -> unit input 
   (** [progress_in inp f] create an input that calls [f ()]
       whenever some content is succesfully read from it.*)
 
-val pos_out : 'a output -> unit output * (unit -> int)
+val pos_out : 'a #output -> unit output * (unit -> int)
 (** Create an output that provide a count function of the number of bytes
     written through it. *)
 
-val progress_out : 'a output -> (unit -> unit) -> unit output
+val progress_out : 'a #output -> (unit -> unit) -> unit output
   (** [progress_out out f] create an output that calls [f ()]
       whenever some content is succesfully written to it.*)
 
-external cast_output : 'a output -> unit output = "%identity"
-(** You can safely transform any output to an unit output in a safe way 
-    by using this function. *)
+val cast_io : #io_handle -> io_handle
+(** Coerces any IO object to the base [io_handle] type. *)
 
 
 
@@ -320,83 +348,83 @@ external cast_output : 'a output -> unit output = "%identity"
 exception Overflow of string
 (** Exception raised when a read or write operation cannot be completed. *)
 
-val read_byte : input -> int
+val read_byte : _ #input -> int
 (** Read an unsigned 8-bit integer. *)
 
-val read_signed_byte : input -> int
+val read_signed_byte : _ #input -> int
 (** Read an signed 8-bit integer. *)
 
-val read_ui16 : input -> int
+val read_ui16 : _ #input -> int
 (** Read an unsigned 16-bit word. *)
 
-val read_i16 : input -> int
+val read_i16 : _ #input -> int
 (** Read a signed 16-bit word. *)
 
-val read_i32 : input -> int
+val read_i32 : _ #input -> int
   (** Read a signed 32-bit integer. Raise [Overflow] if the
       read integer cannot be represented as a Caml 31-bit integer. *)
 
-val read_real_i32 : input -> int32
+val read_real_i32 : _ #input -> int32
 (** Read a signed 32-bit integer as an OCaml int32. *)
 
-val read_i64 : input -> int64
+val read_i64 : _ #input -> int64
 (** Read a signed 64-bit integer as an OCaml int64. *)
 
-val read_float : input -> float
+val read_float : _ #input -> float
 (** Read an IEEE single precision floating point value. *)
 
-val read_double : input -> float
+val read_double : _ #input -> float
 (** Read an IEEE double precision floating point value. *)
 
-val read_uchar: input -> UChar.t
+val read_uchar: _ #input -> UChar.t
 (** Read one UChar from a UTF-8 encoded input*)
 
-val read_string : input -> string
+val read_string : _ #input -> string
 (** Read a null-terminated string. *)
 
-val read_rope: input -> int -> Rope.t
+val read_rope: _ #input -> int -> Rope.t
 (** Read up to n uchars from a UTF-8 encoded input*)
 
-val read_line : input -> string
+val read_line : _ #input -> string
 (** Read a LF or CRLF terminated string. *)
 
-val read_uline: input -> Rope.t
+val read_uline: _ #input -> Rope.t
 (** Read a line of UTF-8*)
 
-val write_byte : 'a output -> int -> unit
+val write_byte : 'a #output -> int -> unit
 (** Write an unsigned 8-bit byte. *)
 
-val write_ui16 : 'a output -> int -> unit
+val write_ui16 : 'a #output -> int -> unit
 (** Write an unsigned 16-bit word. *)
 
-val write_i16 : 'a output -> int -> unit
+val write_i16 : 'a #output -> int -> unit
 (** Write a signed 16-bit word. *)
 
-val write_i32 : 'a output -> int -> unit
+val write_i32 : 'a #output -> int -> unit
 (** Write a signed 32-bit integer. *) 
 
-val write_real_i32 : 'a output -> int32 -> unit
+val write_real_i32 : 'a #output -> int32 -> unit
 (** Write an OCaml int32. *)
 
-val write_i64 : 'a output -> int64 -> unit
+val write_i64 : 'a #output -> int64 -> unit
 (** Write an OCaml int64. *)
 
-val write_double : 'a output -> float -> unit
+val write_double : 'a #output -> float -> unit
 (** Write an IEEE double precision floating point value. *)
 
-val write_uchar: _ output -> UChar.t -> unit
+val write_uchar: 'a #output -> UChar.t -> unit
 (** Write one uchar to a UTF-8 encoded output.*)
 
-val write_float : 'a output -> float -> unit
+val write_float : 'a #output -> float -> unit
 (** Write an IEEE single precision floating point value. *)
 
-val write_string : 'a output -> string -> unit
+val write_string : 'a #output -> string -> unit
 (** Write a string and append an null character. *)
 
-val write_rope : _ output -> Rope.t -> unit
+val write_rope : 'a #output -> Rope.t -> unit
 (** Write a character rope onto a UTF-8 encoded output.*)
 
-val write_line : 'a output -> string -> unit
+val write_line : 'a #output -> string -> unit
 (** Write a line and append a line end.
     
     This adds the correct line end for your operating system.  That
@@ -405,7 +433,7 @@ val write_line : 'a output -> string -> unit
     then a LF is inserted at the end of the line. If your system
     favors CRLF (or ['\r\n']), then this is what will be inserted.*)
 
-val write_uline: _ output -> Rope.t -> unit
+val write_uline: 'a #output -> Rope.t -> unit
 (** Write one line onto a UTF-8 encoded output.*)
 
 (** Same operations as module {!IO}, but with big-endian encoding *)
@@ -424,88 +452,88 @@ sig
 
   *)
 
-	val read_ui16 : input -> int
+	val read_ui16 : _ #input -> int
 	  (** Read an unsigned 16-bit word. *)
 
-	val read_i16 : input -> int
+	val read_i16 : _ #input -> int
 	  (** Read a signed 16-bit word. *)
 
-	val read_i32 : input -> int
+	val read_i32 : _ #input -> int
 	  (** Read a signed 32-bit integer. Raise [Overflow] if the
 	      read integer cannot be represented as a Caml 31-bit integer. *)
 
-	val read_real_i32 : input -> int32
+	val read_real_i32 : _ #input -> int32
 	  (** Read a signed 32-bit integer as an OCaml int32. *)
 
-	val read_i64 : input -> int64
+	val read_i64 : _ #input -> int64
 	  (** Read a signed 64-bit integer as an OCaml int64. *)
 
 
-	val read_double : input -> float
+	val read_double : _ #input -> float
 	  (** Read an IEEE double precision floating point value. *)
 
-	val read_float: input -> float
+	val read_float: _ #input -> float
 	  (** Read an IEEE single precision floating point value. *)
 
-	val write_ui16 : 'a output -> int -> unit
+	val write_ui16 : 'a #output -> int -> unit
 	  (** Write an unsigned 16-bit word. *)
 
-	val write_i16 : 'a output -> int -> unit
+	val write_i16 : 'a #output -> int -> unit
 	  (** Write a signed 16-bit word. *)
 
-	val write_i32 : 'a output -> int -> unit
+	val write_i32 : 'a #output -> int -> unit
 	  (** Write a signed 32-bit integer. *) 
 
-	val write_real_i32 : 'a output -> int32 -> unit
+	val write_real_i32 : 'a #output -> int32 -> unit
 	  (** Write an OCaml int32. *)
 
-	val write_i64 : 'a output -> int64 -> unit
+	val write_i64 : 'a #output -> int64 -> unit
 	  (** Write an OCaml int64. *)
 
-	val write_double : 'a output -> float -> unit
+	val write_double : 'a #output -> float -> unit
 	  (** Write an IEEE double precision floating point value. *)
 
-	val write_float  : 'a output -> float -> unit
+	val write_float  : 'a #output -> float -> unit
 	  (** Write an IEEE single precision floating point value. *)
 
-	val ui16s_of : input -> int Enum.t
+	val ui16s_of : _ #input -> int Enum.t
 	  (** Read an enumeration of unsigned 16-bit words. *)
 
-	val i16s_of : input -> int Enum.t
+	val i16s_of : _ #input -> int Enum.t
 	  (** Read an enumartion of signed 16-bit words. *)
 
-	val i32s_of : input -> int Enum.t
+	val i32s_of : _ #input -> int Enum.t
 	  (** Read an enumeration of signed 32-bit integers. Raise [Overflow] if the
 	      read integer cannot be represented as a Caml 31-bit integer. *)
 
-	val real_i32s_of : input -> int32 Enum.t
+	val real_i32s_of : _ #input -> int32 Enum.t
 	  (** Read an enumeration of signed 32-bit integers as OCaml [int32]s. *)
 
-	val i64s_of : input -> int64 Enum.t
+	val i64s_of : _ #input -> int64 Enum.t
 	  (** Read an enumeration of signed 64-bit integers as OCaml [int64]s. *)
 
-	val doubles_of : input -> float Enum.t
+	val doubles_of : _ #input -> float Enum.t
 	  (** Read an enumeration of IEEE double precision floating point values. *)
 
-	val write_bytes : 'a output -> int Enum.t -> unit
+	val write_bytes : 'a #output -> int Enum.t -> unit
 	  (** Write an enumeration of unsigned 8-bit bytes. *)
 
-	val write_ui16s : 'a output -> int Enum.t -> unit
+	val write_ui16s : 'a #output -> int Enum.t -> unit
 	  (** Write an enumeration of unsigned 16-bit words. *)
 
-	val write_i16s : 'a output -> int Enum.t -> unit
+	val write_i16s : 'a #output -> int Enum.t -> unit
 	  (** Write an enumeration of signed 16-bit words. *)
 
-	val write_i32s : 'a output -> int Enum.t -> unit
+	val write_i32s : 'a #output -> int Enum.t -> unit
 	  (** Write an enumeration of signed 32-bit integers. *) 
 
-	val write_real_i32s : 'a output -> int32 Enum.t -> unit
+	val write_real_i32s : 'a #output -> int32 Enum.t -> unit
 	  (** Write an enumeration of OCaml int32s. *)
 
-	val write_i64s : 'a output -> int64 Enum.t -> unit
+	val write_i64s : 'a #output -> int64 Enum.t -> unit
 	  (** Write an enumeration of OCaml int64s. *)
 
-	val write_doubles : 'a output -> float Enum.t -> unit
+	val write_doubles : 'a #output -> float Enum.t -> unit
 	  (** Write an enumeration of IEEE double precision floating point value. *)
 
 end
@@ -522,10 +550,10 @@ type out_bits
 
 exception Bits_error
 
-val input_bits : input -> in_bits
+val input_bits : _ #input -> in_bits
 (** Read bits from an input *)
 
-val output_bits : 'a output -> out_bits
+val output_bits : 'a #output -> out_bits
 (** Write bits to an output *)
 
 val read_bits : in_bits -> int -> int
@@ -550,7 +578,7 @@ val drop_bits : in_bits -> unit
 val create_in :
   read:(unit -> char) ->
   input:(string -> int -> int -> int) -> 
-  close:(unit -> unit) -> input
+  close:(unit -> unit) -> unit input
 (** Fully create an input by giving all the needed functions. 
 
     {b Note} Do {e not} use this function for creating an input
@@ -561,9 +589,9 @@ val create_in :
 val wrap_in :
   read:(unit -> char) ->
   input:(string -> int -> int -> int) -> 
-  close:(unit -> unit) -> 
-  underlying:(input list) ->
-  input
+  close:(unit -> 'a) -> 
+  underlying:(#io_handle list) ->
+  'a input
 (** Fully create an input reading from other inputs by giving all 
     the needed functions. 
 
@@ -579,8 +607,8 @@ val wrap_in :
 val inherit_in:
   ?read:(unit -> char) ->
   ?input:(string -> int -> int -> int) -> 
-  ?close:(unit -> unit) -> 
-  input -> input
+  ?close:(unit -> 'a) -> 
+  'a #input -> 'a input
   (** Simplified and optimized version of {!wrap_in} which may be used
       whenever only one input appears as dependency.
 
@@ -590,6 +618,11 @@ val inherit_in:
 
       You do not need to close [inp] in [close].
   *)
+
+val unit_in : 'a #input -> unit input
+(** Creates a new input which behaves identically to the original,
+    but lacks the accumulator parameter.  Closing the resulting
+    input will {e not} cause the original input to be closed. *)
 
 
 val create_out :
@@ -616,13 +649,15 @@ val wrap_out :
   output:(string -> int -> int -> int) ->   
   flush:(unit -> unit)         -> 
   close:(unit -> 'a)           -> 
-  underlying:('b output list)  -> 
+  underlying:(#io_handle list) -> 
   'a output
 (**
    Fully create an output that writes to one or more underlying outputs.
 
    This function is a more general version of {!create_out},
    which also handles dependency management between outputs.
+   If necessary, [cast_io] may be used to merge disparate outputs
+   into a single list.
 
    To illustrate the need for dependency management, let us consider
    the following values:
@@ -667,7 +702,7 @@ val inherit_out:
   ?output:(string -> int -> int -> int) -> 
   ?flush:(unit -> unit) ->
   ?close:(unit -> 'a) -> 
-  'a output -> 'a output
+  'a #output -> 'a output
 (**
    Simplified and optimized version of {!wrap_out} whenever only
    one output appears as dependency.
@@ -679,11 +714,17 @@ val inherit_out:
    You do not need to close [out] in [close].
 *)
 
+val unit_out : 'a #output -> unit output
+(** Creates a new output which behaves identically to the original,
+    but lacks the accumulator parameter.  Closing the resulting
+    output will {e not} cause the original input to be closed. *)
+
+
 (**
    {6 For compatibility purposes}
 *)
 
-val input_channel : ?autoclose:bool -> ?cleanup:bool -> in_channel -> input
+val input_channel : ?autoclose:bool -> ?cleanup:bool -> in_channel -> unit input
 (** Create an input that will read from a channel. 
 
     @param autoclose If true or unspecified, the {!type: input}
@@ -704,7 +745,7 @@ val output_channel : ?cleanup:bool -> out_channel -> unit output
 *) 
 
 
-val to_input_channel : input -> in_channel
+val to_input_channel : unit input -> in_channel
 (** Create a channel that will read from an input.
 
     {b Note} This function is extremely costly and is provided
@@ -727,129 +768,129 @@ val to_input_channel : input -> in_channel
     closed automatically by garbage-collection.
 *)
 
-class in_channel : input ->
+class in_channel : _ #input ->
   object
 	method input : string -> int -> int -> int
 	method close_in : unit -> unit
   end
 
-class out_channel : 'a output ->
+class out_channel : 'a #output ->
   object
 	method output : string -> int -> int -> int
 	method flush : unit -> unit
 	method close_out : unit -> unit
   end
 
-class in_chars : input ->
+class in_chars : _ #input ->
   object
 	method get : unit -> char
 	method close_in : unit -> unit
   end
 
-class out_chars : 'a output ->
+class out_chars : 'a #output ->
   object
 	method put : char -> unit
 	method flush : unit -> unit
 	method close_out : unit -> unit
   end
 
-val from_in_channel : #in_channel -> input
+val from_in_channel : #in_channel -> unit input
 val from_out_channel : #out_channel -> unit output
-val from_in_chars : #in_chars -> input
+val from_in_chars : #in_chars -> unit input
 val from_out_chars : #out_chars -> unit output
 
 (** {6 Enumeration API}*)
 
-val bytes_of : input -> int Enum.t
+val bytes_of : _ #input -> int Enum.t
 (** Read an enumeration of unsigned 8-bit integers. *)
 
-val signed_bytes_of : input -> int Enum.t
+val signed_bytes_of : _ #input -> int Enum.t
 (** Read an enumeration of signed 8-bit integers. *)
 
-val ui16s_of : input -> int Enum.t
+val ui16s_of : _ #input -> int Enum.t
 (** Read an enumeration of unsigned 16-bit words. *)
 
-val i16s_of : input -> int Enum.t
+val i16s_of : _ #input -> int Enum.t
 (** Read an enumartion of signed 16-bit words. *)
 
-val i32s_of : input -> int Enum.t
+val i32s_of : _ #input -> int Enum.t
 (** Read an enumeration of signed 32-bit integers. Raise [Overflow] if the
   read integer cannot be represented as a Caml 31-bit integer. *)
 
-val real_i32s_of : input -> int32 Enum.t
+val real_i32s_of : _ #input -> int32 Enum.t
 (** Read an enumeration of signed 32-bit integers as OCaml [int32]s. *)
 
-val i64s_of : input -> int64 Enum.t
+val i64s_of : _ #input -> int64 Enum.t
 (** Read an enumeration of signed 64-bit integers as OCaml [int64]s. *)
 
-val doubles_of : input -> float Enum.t
+val doubles_of : _ #input -> float Enum.t
 (** Read an enumeration of IEEE double precision floating point values. *)
 
-val strings_of : input -> string Enum.t
+val strings_of : _ #input -> string Enum.t
 (** Read an enumeration of null-terminated strings. *)
 
-val lines_of : input -> string Enum.t
+val lines_of : _ #input -> string Enum.t
 (** Read an enumeration of LF or CRLF terminated strings. *)
  
-val chunks_of : int -> input -> string Enum.t
+val chunks_of : int -> _ #input -> string Enum.t
 (** Read an input as an enumeration of strings of given maximal length.*)
 
-val ulines_of : input -> Rope.t Enum.t
+val ulines_of : _ #input -> Rope.t Enum.t
 (** offer the lines of a UTF-8 encoded input as an enumeration*)
 
-val chars_of : input -> char Enum.t
+val chars_of : _ #input -> char Enum.t
 (** Read an enumeration of Latin-1 characters. 
 
     {b Note} Usually faster than calling [read] several times.*)
 
-val uchars_of : input -> UChar.t Enum.t
+val uchars_of : _ #input -> UChar.t Enum.t
 (** offer the characters of an UTF-8 encoded input as an enumeration*)
 
 val bits_of : in_bits -> int Enum.t
 (** Read an enumeration of bits *)
 
-val write_bytes : 'a output -> int Enum.t -> unit
+val write_bytes : 'a #output -> int Enum.t -> unit
 (** Write an enumeration of unsigned 8-bit bytes. *)
 
-val write_chars : 'a output -> char Enum.t -> unit
+val write_chars : 'a #output -> char Enum.t -> unit
 (** Write an enumeration of chars. *)
 
-val write_uchars : _ output -> UChar.t Enum.t -> unit
+val write_uchars : 'a #output -> UChar.t Enum.t -> unit
 (** Write an enumeration of characters onto a UTF-8 encoded output.*)
 
-val write_ui16s : 'a output -> int Enum.t -> unit
+val write_ui16s : 'a #output -> int Enum.t -> unit
 (** Write an enumeration of unsigned 16-bit words. *)
 
-val write_i16s : 'a output -> int Enum.t -> unit
+val write_i16s : 'a #output -> int Enum.t -> unit
 (** Write an enumeration of signed 16-bit words. *)
 
-val write_i32s : 'a output -> int Enum.t -> unit
+val write_i32s : 'a #output -> int Enum.t -> unit
 (** Write an enumeration of signed 32-bit integers. *) 
 
-val write_real_i32s : 'a output -> int32 Enum.t -> unit
+val write_real_i32s : 'a #output -> int32 Enum.t -> unit
 (** Write an enumeration of OCaml int32s. *)
 
-val write_i64s : 'a output -> int64 Enum.t -> unit
+val write_i64s : 'a #output -> int64 Enum.t -> unit
 (** Write an enumeration of OCaml int64s. *)
 
-val write_doubles : 'a output -> float Enum.t -> unit
+val write_doubles : 'a #output -> float Enum.t -> unit
 (** Write an enumeration of IEEE double precision floating point value. *)
 
-val write_strings : 'a output -> string Enum.t -> unit
+val write_strings : 'a #output -> string Enum.t -> unit
 (** Write an enumeration of strings, appending null characters.*)
 
-val write_chunks: 'a output -> string Enum.t -> unit
+val write_chunks: 'a #output -> string Enum.t -> unit
 (** Write an enumeration of strings, without appending null characters.*)
 
-val write_lines : 'a output -> string Enum.t -> unit
+val write_lines : 'a #output -> string Enum.t -> unit
 (** Write an enumeration of lines, appending a LF (it might be converted
     to CRLF on some systems depending on the underlying IO). *)
 
-val write_ropes : 'a output -> Rope.t Enum.t -> unit
+val write_ropes : 'a #output -> Rope.t Enum.t -> unit
 (** Write an enumeration of ropes onto a UTF-8 encoded output,
     without appending a line-end.*)
 
-val write_ulines : _ output -> Rope.t Enum.t -> unit
+val write_ulines : 'a #output -> Rope.t Enum.t -> unit
 (** Write an enumeration of lines onto a UTF-8 encoded output.*)
 
 val write_bitss : nbits:int -> out_bits -> int Enum.t -> unit
@@ -858,7 +899,7 @@ val write_bitss : nbits:int -> out_bits -> int Enum.t -> unit
 (** {6 Printing} *)
 
 
-val printf : 'a output -> ('b, 'a output, unit) format -> 'b
+val printf : ('a #output as 'out) -> ('b, 'out, unit) format -> 'b
 (** A [fprintf]-style unparser. For more information
     about printing, see the documentation of {!Printf}.
 
@@ -872,7 +913,7 @@ val default_buffer_size : int
    {6 Thread-safety}
 *)
 
-val synchronize_in : ?lock:Concurrent.lock -> input  -> input
+val synchronize_in : ?lock:Concurrent.lock -> _ #input  -> unit input
 (**[synchronize_in inp] produces a new {!type: input} which reads from [input]
    in a thread-safe way. In other words, a lock prevents two distinct threads
    from reading from that input simultaneously, something which would potentially
@@ -884,7 +925,7 @@ val synchronize_in : ?lock:Concurrent.lock -> input  -> input
    of pipes.
 *)
 
-val synchronize_out: ?lock:Concurrent.lock -> _ output -> unit output
+val synchronize_out: ?lock:Concurrent.lock -> 'a #output -> unit output
 (**[synchronize_out out] produces a new {!type: output} which writes to [output]
    in a thread-safe way. In other words, a lock prevents two distinct threads
    from writing to that output simultaneously, something which would potentially
@@ -925,5 +966,5 @@ val lock_factory: (unit -> Concurrent.lock) ref
 
 
 (**/**)
-val comb : ('a output * 'a output) -> 'a output
+val comb : ('a #output * 'a #output) -> 'a output
 (** Old name of [combine]*)

@@ -422,13 +422,13 @@ val sexp_of_t : t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
 
-val print: 'a InnerIO.output -> string -> unit
+val print: 'a #InnerIO.output -> string -> unit
 (**Print a string.*)
 
-val println: 'a InnerIO.output -> string -> unit
+val println: 'a #InnerIO.output -> string -> unit
 (**Print a string, end the line.*)
 
-val print_quoted: 'a InnerIO.output -> string -> unit
+val print_quoted: 'a #InnerIO.output -> string -> unit
 (**Print a string, with quotes.
 
    [print_quoted stdout "foo"] prints ["foo"] (with the quotes)

@@ -156,8 +156,8 @@ let apply_enum f x =
 (** [close_at_end input e] returns an enumeration which behaves as [e]
     and has the secondary effect of closing [input] once everything has
     been read.*)
-let close_at_end (input:input) e=
-  Enum.suffix_action (fun () -> close_in input) e
+let close_at_end (input: _ #input) e=
+  Enum.suffix_action (fun () -> ignore(close input)) e
 
 let make_enum f input =
   close_at_end input (Enum.from (fun () -> apply_enum f input))
@@ -174,8 +174,8 @@ let combine (a,b) =
 	      flush a;
 	      flush b)
     ~close:(fun () ->
-	      (close_out a, close_out b))
-    ~underlying:[cast_output a; cast_output b]
+	      (close a, close b))
+    ~underlying:[cast_io a; cast_io b]
 
 
 let write_enum out f enum =
@@ -333,21 +333,22 @@ type 'a bc = {
 	mutable bits : int;
 }
 
-type in_bits = input bc
+type in_bits  = unit input bc
 type out_bits = unit output bc
 
 exception Bits_error
 
+
 let input_bits ch =
 	{
-		ch = ch;
+		ch = unit_in ch;
 		nbits = 0;
 		bits = 0;
 	}
 
 let output_bits ch =
 	{
-		ch = cast_output ch;
+		ch = unit_out ch;
 		nbits = 0;
 		bits = 0;
 	}
@@ -408,27 +409,27 @@ let flush_bits b =
 class in_channel ch =
   object
 	method input s pos len = input ch s pos len
-	method close_in() = close_in ch
+	method close_in() = ignore(close ch)
   end
 
 class out_channel ch =
   object
 	method output s pos len = output ch s pos len
 	method flush() = flush ch
-	method close_out() = ignore(close_out ch)
+	method close_out() = ignore(close ch)
   end
 
 class in_chars ch =
   object
 	method get() = try read ch with No_more_input -> raise End_of_file
-	method close_in() = close_in ch
+	method close_in() = ignore(close ch)
   end
 
 class out_chars ch =
   object
 	method put t = write ch t
 	method flush() = flush ch
-	method close_out() = ignore(close_out ch)
+	method close_out() = ignore(close ch)
   end
 
 let from_in_channel ch =
@@ -625,7 +626,7 @@ let tab_out ?(tab=' ') n out =
 
 (*
 let lmargin n (p:_ output -> 'a -> unit) out x =
-  p (tab_out n (cast_output out)) x
+  p (tab_out n (cast_io out)) x
 *)
 
 let comb (a,b) =
@@ -639,7 +640,7 @@ let comb (a,b) =
 	      flush a;
 	      flush b)
     ~close:(fun () ->
-	      ignore (close_out a); close_out b)
+	      ignore (close a); close b)
 
 
 (*let repeat n out =
@@ -824,7 +825,7 @@ let to_input_channel inp =
     let (name, cout) = Filename.open_temp_file "ocaml" "pipe" in
     let out          = output_channel cout                    in
       copy inp out;
-      close_out out;
+      close out;
       Pervasives.open_in name    
 
 

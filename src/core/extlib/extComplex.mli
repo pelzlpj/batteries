@@ -143,5 +143,5 @@ sig
   val sexp_of_t : t -> Sexplib.Sexp.t
 
   (** {7 Printing}*)
-  val print: 'a InnerIO.output -> t -> unit
+  val print: 'a #InnerIO.output -> t -> unit
 end

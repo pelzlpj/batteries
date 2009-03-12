@@ -14,7 +14,7 @@ open Legacy.Digest     in
 let batteries_result () =
   let inp    = File.open_in Sys.argv.(0) in
   let result = MD5.channel inp (-1)   in
-    IO.close_in inp;
+    IO.close inp;
     result
 
 (*3. Compare*)

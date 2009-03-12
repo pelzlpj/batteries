@@ -243,9 +243,8 @@ module Hashtbl =
       val sexp_of_t : (key -> Sexplib.Sexp.t) -> ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
       val t_of_sexp : (Sexplib.Sexp.t -> key) -> (Sexplib.Sexp.t -> 'a) -> Sexplib.Sexp.t -> 'a t
       val print :  ?first:string -> ?last:string -> ?sep:string -> 
-	('a InnerIO.output -> key -> unit) -> 
-	('a InnerIO.output -> 'b -> unit) -> 
-	'a InnerIO.output -> 'b t -> unit
+	(('a #InnerIO.output as 'out) -> key -> unit) -> 
+	('out -> 'b -> unit) -> 'out -> 'b t -> unit
 
       (** Operations on {!Hashtbl} without exceptions.*)
       module ExceptionLess :

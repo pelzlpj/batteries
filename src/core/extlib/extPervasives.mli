@@ -525,7 +525,7 @@ val ( @ ) : 'a list -> 'a list -> 'a list
     More operations may be found in modules {!IO} and {!File}.
 *)
 
-val stdin : input
+val stdin : unit input
 (** Standard input, as per Unix/Windows conventions (by default, keyboard).
 
     Use this input to read what the user is writing on the keyboard.*)
@@ -588,7 +588,7 @@ val print_guess : 'a -> unit
       useful mostly for debugging. As a general rule, it should not be
       used in production code.*)
 
-val print_all : input -> unit
+val print_all : unit input -> unit
   (** Print the contents of an input to the standard output.*)
 
 (** {7 Output functions on standard error} *)
@@ -621,7 +621,7 @@ val prerr_guess : 'a -> unit
       error output.  See remarks for {!dump}. This function is
       useful mostly for debugging.*)
 
-val prerr_all : input -> unit
+val prerr_all : unit input -> unit
   (** Print the contents of an input to the error output.*)
 
 (** {7 Input functions on standard input} *)
@@ -742,7 +742,7 @@ val close_out_noerr : unit IO.output -> unit
 
 val open_in : ?mode:(File.open_in_flag list) -> 
   ?perm:File.permission -> 
-  string -> IO.input
+  string -> unit IO.input
 (** Open the named file for reading. You will need to close the file once you have
     finished using it.
     
@@ -761,13 +761,13 @@ val open_in : ?mode:(File.open_in_flag list) ->
     Raise [Sys_error] if the file could not be opened. *)
 
 
-val open_in_bin : string -> IO.input
+val open_in_bin : string -> unit IO.input
 (** Same as {!Pervasives.open_in}, but the file is opened in binary mode,
    so that no translation takes place during reads. On operating
    systems that do not distinguish between text mode and binary
    mode, this function behaves like {!Pervasives.open_in}. *)
 
-val open_in_gen : open_flag list -> int -> string -> IO.input
+val open_in_gen : open_flag list -> int -> string -> unit IO.input
 (** [open_in mode perm filename] opens the named file for reading,
     as described above. The extra arguments [mode] and [perm]
     specify the opening mode and file permissions.
@@ -777,18 +777,18 @@ val open_in_gen : open_flag list -> int -> string -> IO.input
     @deprecated Use {!open_in instead}*)
 
 
-val input_char : IO.input -> char
+val input_char : unit IO.input -> char
 (** Read one character from the given input channel.
    Raise [End_of_file] if there are no more characters to read. *)
 
-val input_line : IO.input -> string
+val input_line : unit IO.input -> string
 (** Read characters from the given input channel, until a
    newline character is encountered. Return the string of
    all characters read, without the newline character at the end.
    Raise [End_of_file] if the end of the file is reached
    at the beginning of line. *)
 
-val input : IO.input -> string -> int -> int -> int
+val input : unit IO.input -> string -> int -> int -> int
 (** [input ic buf pos len] reads up to [len] characters from
    the given channel [ic], storing them in string [buf], starting at
    character number [pos].
@@ -805,7 +805,7 @@ val input : IO.input -> string -> int -> int -> int
    Exception [Invalid_argument "input"] is raised if [pos] and [len]
    do not designate a valid substring of [buf]. *)
 
-val really_input : IO.input -> string -> int -> int -> unit
+val really_input : unit IO.input -> string -> int -> int -> unit
 (** [really_input ic buf pos len] reads [len] characters from channel [ic],
     storing them in string [buf], starting at character number [pos].
     Raise [End_of_file] if the end of file is reached before [len]
@@ -813,32 +813,32 @@ val really_input : IO.input -> string -> int -> int -> unit
     Raise [Invalid_argument "really_input"] if
     [pos] and [len] do not designate a valid substring of [buf]. *)
 
-val input_byte : IO.input -> int
+val input_byte : unit IO.input -> int
 (** Same as {!Pervasives.input_char}, but return the 8-bit integer representing
     the character.
     Raise [End_of_file] if an end of file was reached. *)
 
-val input_binary_int : IO.input -> int
+val input_binary_int : unit IO.input -> int
 (** Read an integer encoded in binary format (4 bytes, big-endian)
     from the given input channel. See {!Pervasives.output_binary_int}.
     Raise [End_of_file] if an end of file was reached while reading the
     integer. *)
 
-val input_value : IO.input -> 'a
+val input_value : unit IO.input -> 'a
 (** Read the representation of a structured value, as produced
     by {!output_value}, and return the corresponding value.
     This function is identical to {!Marshal.input};
     see the description of module {!Marshal} for more information,
     in particular concerning the lack of type safety. *)
   
-val close_in : IO.input -> unit
+val close_in : unit IO.input -> unit
   (** Close the given channel.  Input functions raise a [Sys_error]
       exception when they are applied to a closed input channel,
       except [close_in], which does nothing when applied to an already
       closed channel.  Note that [close_in] may raise [Sys_error] if
       the operating system signals an error. *)
   
-val close_in_noerr : IO.input -> unit
+val close_in_noerr : unit IO.input -> unit
 (** Same as [close_in], but ignore all errors. *)
   
 
@@ -1279,7 +1279,8 @@ val ( --- ) : int -> int -> int Enum.t
 val ( --~ ) : char -> char -> char Enum.t
 (** As ( -- ), but for characters.*)
 
-val print :  ?first:string -> ?last:string -> ?sep:string -> ('a InnerIO.output -> 'b -> unit) -> 'a InnerIO.output -> 'b Enum.t -> unit
+val print :  ?first:string -> ?last:string -> ?sep:string -> 
+  (('a #InnerIO.output as 'out) -> 'b -> unit) -> 'out -> 'b Enum.t -> unit
 (** Print and consume the contents of an enumeration.*)
 
 (**/**)

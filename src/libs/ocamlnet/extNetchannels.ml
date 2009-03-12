@@ -40,16 +40,16 @@ object
       IO.input inp buf pos len
     with IO.No_more_input -> raise End_of_file
 
-  method close_in () = IO.close_in inp
+  method close_in () = ignore (IO.close inp)
     
 end
 
-class ['a] channel_of_output (out: 'a IO.output) =
+class ['a] channel_of_output (out: 'a #IO.output) =
 object
   val mutable _acc = None
   method output = IO.output out
   method flush () = IO.flush out
-  method close_out () = _acc <- Some (IO.close_out out)
+  method close_out () = _acc <- Some (IO.close out)
   method accumulator = _acc
 end
 

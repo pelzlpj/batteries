@@ -35,37 +35,37 @@ struct
   (**
      {6 Tracking additional information on inputs/outputs}
 
-     {b Note} Having [input]/[output] as objects would have made this
-     easier. Here, we need to maintain an external weak hashtable to
-     track low-level information on our [input]s/[output]s.
+     {b Note} It may make sense to implement [input] and [output] subclasses
+     that track Unix file descriptors.  The approach here is to maintain an external
+     weak hashtable to track low-level information on our [input]s/[output]s.
   *)
 
-  module Wrapped_in = InnerWeaktbl.Make(Input) (*input  -> in_channel *)
-  module Wrapped_out= InnerWeaktbl.Make(Output)(*output -> out_channel*)
+  module Wrapped_in = InnerWeaktbl.Make(IOHandle) (*input  -> in_channel *)
+  module Wrapped_out= InnerWeaktbl.Make(IOHandle) (*output -> out_channel*)
   let wrapped_in    = Wrapped_in.create 16
   let wrapped_out   = Wrapped_out.create 16
 
   let input_add k v =
-    Concurrent.sync !lock (Wrapped_in.add wrapped_in k) v
+    Concurrent.sync !lock (Wrapped_in.add wrapped_in (cast_io k)) v
       
   let input_get k =
-    Concurrent.sync !lock (Wrapped_in.find wrapped_in) k
+    Concurrent.sync !lock (Wrapped_in.find wrapped_in) (cast_io k)
 
   let output_add k v =
-    Concurrent.sync !lock (Wrapped_out.add wrapped_out k) v
+    Concurrent.sync !lock (Wrapped_out.add wrapped_out (cast_io k)) v
       
   let output_get k =
-    Concurrent.sync !lock (Wrapped_out.find wrapped_out) k
+    Concurrent.sync !lock (Wrapped_out.find wrapped_out) (cast_io k)
 
   let wrap_in ?autoclose ?cleanup cin =
     let input = InnerIO.input_channel ?autoclose ?cleanup cin in
-      Concurrent.sync !lock (Wrapped_in.add wrapped_in input) cin;
-      input
+    input_add input cin;
+    input
 
   let wrap_out ?cleanup cout =
-    let output = cast_output (InnerIO.output_channel ?cleanup cout) in
-      Concurrent.sync !lock (Wrapped_out.add wrapped_out output) cout;
-      output
+    let output = InnerIO.output_channel ?cleanup cout in
+    output_add output cout;
+    output
 
   (**
      {6 File descriptors}
@@ -82,7 +82,7 @@ struct
     wrap_out (out_channel_of_descr fd)
 
   let descr_of_output cout =
-    try  descr_of_out_channel (output_get (cast_output cout))
+    try  descr_of_out_channel (output_get cout)
     with Not_found -> raise (Invalid_argument "Unix.descr_of_out_channel")
 
   let in_channel_of_descr fd    = input_of_descr ~autoclose:false fd

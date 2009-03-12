@@ -23,11 +23,11 @@ open Extlib
 exception Compression_error of string * exn option
 module type Decompressor =
 sig
-  val uncompress: IO.input -> IO.input
+  val uncompress: unit IO.input -> unit IO.input
   val open_in: ?mode:File.open_in_flag list -> ?perm:File.permission ->
     string ->
-    IO.input
-  val with_in: IO.input -> (IO.input -> 'a) -> 'a
+    unit IO.input
+  val with_in: unit IO.input -> (unit IO.input -> 'a) -> 'a
 end
 
 module type Compressor =

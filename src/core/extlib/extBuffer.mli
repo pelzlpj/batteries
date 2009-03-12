@@ -133,15 +133,15 @@ val add_buffer : t -> t -> unit
 (** [add_buffer b1 b2] appends the current contents of buffer [b2]
    at the end of buffer [b1].  [b2] is not modified. *)
 
-val add_input : t -> InnerIO.input -> int -> unit
+val add_input : t -> _ #InnerIO.input -> int -> unit
   (** [add_input b ic n] reads exactly [n] character from the input [ic]
       and stores them at the end of buffer [b].  Raise [End_of_file] if
       the channel contains fewer than [n] characters. *)
 
-val add_channel : t -> InnerIO.input -> int -> unit
+val add_channel : t -> _ #InnerIO.input -> int -> unit
   (** @obsolete replaced by {!add_input}*)
 
-val output_buffer : _ InnerIO.output -> t -> unit
+val output_buffer : _ #InnerIO.output -> t -> unit
   (** [output_buffer oc b] writes the current contents of buffer [b]
       on the output channel [oc]. *)
 
@@ -153,6 +153,6 @@ val sexp_of_t : t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
 
-val print: 'a InnerIO.output -> t -> unit
+val print: 'a #InnerIO.output -> t -> unit
 
 end

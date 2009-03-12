@@ -28,7 +28,7 @@
 open Extlib
 
 type in_channel
-val open_input: IO.input-> in_channel
+val open_input: unit IO.input -> in_channel
 val input_char: in_channel -> char
 val input_byte: in_channel -> int
 val input: in_channel -> string -> int -> int -> int

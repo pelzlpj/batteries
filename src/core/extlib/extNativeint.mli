@@ -230,7 +230,7 @@ val sexp_of_t : t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
 
-val print : 'a IO.output -> t -> unit
+val print : 'a #IO.output -> t -> unit
 
 (**/**)
 

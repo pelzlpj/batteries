@@ -34,10 +34,48 @@
    @author David Teller
    @author Philippe Strauss
    @author Edgar Friendly
+   @author Paul Pelzl
 *)
 
-type input
-type 'a output
+
+class type io_handle = object
+  method get_id             : unit      -> int
+  method flush              : unit      -> unit
+  method close_unit         : unit      -> unit
+  method register_dependent : io_handle -> unit
+end
+(** The base class of all IO objects, providing cleanup and dependency tracking. *)
+
+class type ['a] io_base = object
+  inherit io_handle
+  method close : unit -> 'a
+end
+(** A parameterized IO base class which provides access to accumulator data. *)
+
+class type readable = object
+  method read  : unit -> char
+  method input : string -> int -> int -> int
+end
+(** The IO capability class which encapsulates reading of data. *)
+
+class type writable = object
+  method write  : char -> unit
+  method output : string -> int -> int -> int
+end
+(** The IO capability class which encapsulates writing of data. *)
+
+class type ['a] input = object
+  inherit readable
+  inherit ['a] io_base
+end
+(** The standard IO class representing readable channels. *)
+
+class type ['a] output = object
+  inherit writable
+  inherit ['a] io_base
+end
+(** The standard IO class representing writable channels. *)
+
 
 exception No_more_input
 (** This exception is raised when reading on an input with the [read] or
@@ -49,83 +87,80 @@ exception Input_closed
 exception Output_closed
 (** This exception is raised when reading on a closed output. *)
 
-val read : input -> char
+val read : _ #input -> char
 (** Read a single char from an input or raise [No_more_input] if
   no input available. *)
 
-val read_all : input -> string
+val read_all : _ #input -> string
 (** read all the contents of the input until [No_more_input] is raised. *)
 
-val pipe : unit -> input * unit output
+val pipe : unit -> unit input * unit output
 (** Create a pipe between an input and an ouput. Data written from
   the output can be read from the input. *)
 
-val nread : input -> int -> string
+val nread : _ #input -> int -> string
 (** [nread i n] reads a string of size up to [n] from an input.
   The function will raise [No_more_input] if no input is available.
   It will raise [Invalid_argument] if [n] < 0. *)
 
-val really_nread : input -> int -> string
+val really_nread : _ #input -> int -> string
 (** [really_nread i n] reads a string of exactly [n] characters
     from the input. Raises [No_more_input] if at least [n] characters are
     not available. Raises [Invalid_argument] if [n] < 0. *)
 
-val input : input -> string -> int -> int -> int
+val input : _ #input -> string -> int -> int -> int
 (** [input i s p l] reads up to [l] characters from the given input, storing
   them in string [s], starting at character number [p]. It returns the actual
   number of characters read or raise [No_more_input] if no character can be
   read. It will raise [Invalid_argument] if [p] and [l] do not designate a
   valid substring of [s]. *)
 
-val really_input : input -> string -> int -> int -> int
+val really_input : _ #input -> string -> int -> int -> int
 (** [really_input i s p l] reads exactly [l] characters from the given input,
   storing them in the string [s], starting at position [p]. For consistency with
   {!IO.input} it returns [l]. Raises [No_more_input] if at [l] characters are
   not available. Raises [Invalid_argument] if [p] and [l] do not designate a
   valid substring of [s]. *)
 
-val close_in : input -> unit
-(** Close the input. It can no longer be read from. *)
-
 (*val auto_close_in : input -> input
 (** Create a new channel which will close automatically once there is nothing
     left to read.*)*)
 
-val write : 'a output -> char -> unit
+val write : 'a #output -> char -> unit
 (** Write a single char to an output. *)
 
-val nwrite : 'a output -> string -> unit
+val nwrite : 'a #output -> string -> unit
 (** Write a string to an output. *)
 
-val write_buf: 'a output -> Buffer.t -> unit
+val write_buf: 'a #output -> Buffer.t -> unit
 (** Write the contents of a buffer to an output.*)
 
-val output : 'a output -> string -> int -> int -> int
+val output : 'a #output -> string -> int -> int -> int
 (** [output o s p l] writes up to [l] characters from string [s], starting at
   offset [p]. It returns the number of characters written. It will raise
   [Invalid_argument] if [p] and [l] do not designate a valid substring of [s]. *)
 
-val really_output : 'a output -> string -> int -> int -> int
+val really_output : 'a #output -> string -> int -> int -> int
 (** [really_output o s p l] writes exactly [l] characters from string [s] onto
   the the output, starting with the character at offset [p]. For consistency with
   {!IO.output} it returns [l]. Raises [Invalid_argument] if [p] and [l] do not
   designate a valid substring of [s]. *)
 
-val flush : 'a output -> unit
+val flush : 'a #output -> unit
 (** Flush an output. *)
 
 val flush_all : unit -> unit
 (** Flush all outputs. *)
 
-val close_out : 'a output -> 'a
-(** Close the output and return its accumulator data.
-    It can no longer be written. *)
+val close : 'a #io_base -> 'a
+(** Close the IO object and return its accumulator data.
+    It can no longer be read from or written to. *)
 
 val close_all : unit -> unit
 (** Close all outputs.
     Ignore errors.*)
 
-val input_string : string -> input
+val input_string : string -> unit input
 (** Create an input that will read from a string. *)
 
 val output_string : unit -> string output
@@ -140,7 +175,7 @@ val output_buffer : Buffer.t -> string output
 val create_in :
   read:(unit -> char) ->
   input:(string -> int -> int -> int) -> 
-  close:(unit -> unit) -> input
+  close:(unit -> unit) -> unit input
 (** Fully create an input by giving all the needed functions. 
 
     {b Note} Do {e not} use this function for creating an input
@@ -151,8 +186,8 @@ val create_in :
 val inherit_in:
   ?read:(unit -> char) ->
   ?input:(string -> int -> int -> int) -> 
-  ?close:(unit -> unit) -> 
-  input -> input
+  ?close:(unit -> 'a) -> 
+  'a #input -> 'a input
 (**
    Simplified and optimized version of {!wrap_in} whenever only
    one input appears as dependency.
@@ -162,15 +197,20 @@ val inherit_in:
 val wrap_in :
   read:(unit -> char) ->
   input:(string -> int -> int -> int) -> 
-  close:(unit -> unit) -> 
-  underlying:(input list) ->
-  input
+  close:(unit -> 'a) -> 
+  underlying:(#io_handle list) ->
+  'a input
 (** Fully create an input reading from other inputs by giving all the needed functions. 
 
     This function is a more general version of {!create_in}
     which also handles dependency management between inputs.
 *)
 
+
+val unit_in : 'a #input -> unit input
+(** Creates a new input which behaves identically to the original,
+    but lacks the accumulator parameter.  Closing the resulting
+    input will {e not} cause the original input to be closed. *)
 
 
 
@@ -198,11 +238,17 @@ val inherit_out:
   ?output:(string -> int -> int -> int) -> 
   ?flush:(unit -> unit) ->
   ?close:(unit -> 'a) -> 
-  'a output -> 'a output
+  'a #output -> 'a output
 (**
    Simplified and optimized version of {!wrap_out} whenever only
    one output appears as dependency.
 *)
+
+
+val unit_out : 'a #output -> unit output
+(** Creates a new output which behaves identically to the original,
+    but lacks the accumulator parameter.  Closing the resulting
+    output will {e not} cause the original input to be closed. *)
 
 
 val wrap_out :
@@ -210,20 +256,22 @@ val wrap_out :
   output:(string -> int -> int -> int) ->   
   flush:(unit -> unit)         -> 
   close:(unit -> 'a)           -> 
-  underlying:('b output list)  -> 
+  underlying:(#io_handle list) -> 
   'a output
 (**
    Fully create an output that writes to one or more underlying outputs.
 
    This function is a more general version of {!create_out},
    which also handles dependency management between outputs.
+   If necessary, [cast_io] may be used to merge disparate outputs
+   into a single list.
 
    To illustrate the need for dependency management, let us consider
    the following values:
    - an output [out]
    - a function [f : _ output -> _ output], using {!create_out} to
    create a new output for writing some data to an underyling
-   output (for instance, a function comparale to {!tab_out} or a
+   output (for instance, a function comparable to {!tab_out} or a
    function performing transparent compression or transparent
    traduction between encodings)
 
@@ -272,80 +320,79 @@ val default_buffer_size : int
 exception Overflow of string
 (** Exception raised when a read or write operation cannot be completed. *)
 
-val read_byte : input -> int
+val read_byte : _ #input -> int
 (** Read an unsigned 8-bit integer. *)
 
-val read_signed_byte : input -> int
+val read_signed_byte : _ #input -> int
 (** Read an signed 8-bit integer. *)
 
-val read_ui16 : input -> int
+val read_ui16 : _ #input -> int
 (** Read an unsigned 16-bit word. *)
 
-val read_i16 : input -> int
+val read_i16 : _ #input -> int
 (** Read a signed 16-bit word. *)
 
-val read_i32 : input -> int
+val read_i32 : _ #input -> int
 (** Read a signed 32-bit integer. Raise [Overflow] if the
   read integer cannot be represented as a Caml 31-bit integer. *)
 
-val read_real_i32 : input -> int32
+val read_real_i32 : _ #input -> int32
 (** Read a signed 32-bit integer as an OCaml int32. *)
 
-val read_i64 : input -> int64
+val read_i64 : _ #input -> int64
 (** Read a signed 64-bit integer as an OCaml int64. *)
 
-val read_float : input -> float
+val read_float : _ #input -> float
 (** Read an IEEE single precision floating point value. *)
 
-val read_double : input -> float
+val read_double : _ #input -> float
 (** Read an IEEE double precision floating point value. *)
 
-val read_string : input -> string
+val read_string : _ #input -> string
 (** Read a null-terminated string. *)
 
-val read_line : input -> string
+val read_line : _ #input -> string
 (** Read a LF or CRLF terminated string. *)
 
-val write_byte : 'a output -> int -> unit
+val write_byte : 'a #output -> int -> unit
 (** Write an unsigned 8-bit byte. *)
 
-val write_ui16 : 'a output -> int -> unit
+val write_ui16 : 'a #output -> int -> unit
 (** Write an unsigned 16-bit word. *)
 
-val write_i16 : 'a output -> int -> unit
+val write_i16 : 'a #output -> int -> unit
 (** Write a signed 16-bit word. *)
 
-val write_i32 : 'a output -> int -> unit
+val write_i32 : 'a #output -> int -> unit
 (** Write a signed 32-bit integer. *) 
 
-val write_real_i32 : 'a output -> int32 -> unit
+val write_real_i32 : 'a #output -> int32 -> unit
 (** Write an OCaml int32. *)
 
-val write_i64 : 'a output -> int64 -> unit
+val write_i64 : 'a #output -> int64 -> unit
 (** Write an OCaml int64. *)
 
-val write_double : 'a output -> float -> unit
+val write_double : 'a #output -> float -> unit
 (** Write an IEEE double precision floating point value. *)
 
-val write_float : 'a output -> float -> unit
+val write_float : 'a #output -> float -> unit
 (** Write an IEEE single precision floating point value. *)
 
-val write_string : 'a output -> string -> unit
+val write_string : 'a #output -> string -> unit
 (** Write a string and append an null character. *)
 
-val write_line : 'a output -> string -> unit
+val write_line : 'a #output -> string -> unit
 (** Write a line and append a LF (it might be converted
 	to CRLF on some systems depending on the underlying IO). *)
 
-external cast_output : 'a output -> unit output = "%identity"
-(** You can safely transform any output to an unit output in a safe way 
-  by using this function. *)
+val cast_io : #io_handle -> io_handle
+(** Coerces any IO object to the base [io_handle] type. *)
 
 (**
    {6 For compatibility purposes}
 *)
 
-val input_channel : ?autoclose:bool -> ?cleanup:bool -> in_channel -> input
+val input_channel : ?autoclose:bool -> ?cleanup:bool -> in_channel -> unit input
 (** Create an input that will read from a channel. 
 
     @param autoclose If true or unspecified, the {!type: input}
@@ -383,7 +430,7 @@ val to_output_channel: _ output -> out_channel
 *)
 (** {6 Standard inputs/outputs} *)
 
-val stdin : input
+val stdin : unit input
 (** Standard input, as per Unix/Windows conventions (by default, keyboard).*)
 
 val stdout: unit output
@@ -407,30 +454,18 @@ val stdnull: unit output
     The following modules may be useful to create hashtables of inputs or outputs.
 *)
 
-module Input :
+module IOHandle :
 sig
-  type t = input
-  val compare : input -> input -> int
-    (**A total order on inputs*)
+  type t = io_handle
+  val compare : io_handle -> io_handle -> int
+    (**A total order on IO objects.*)
 
-  val hash    : input -> int
-    (**A hash function for inputs*)
+  val hash    : io_handle -> int
+    (**A hash function for IO objects.*)
 
-  val equal : input -> input -> bool
+  val equal   : io_handle -> io_handle -> bool
+    (**An equality function for IO objects.*)
 end
-
-module Output :
-sig
-  type t = unit output
-  val compare : _ output -> _ output -> int
-    (**A total order on outputs*)
-
-  val hash    : _ output -> int
-    (**A hash function for outputs*)
-
-  val equal : _ output -> _ output -> bool
-end
-
 
 
 
@@ -612,11 +647,11 @@ type ('a, 'b, 'c) t = ('a, 'b, 'c) Pervasives.format
 
 (** {6 Common functions}*)
 
-val printf: ('b, 'a output, unit) t -> 'b
+val printf: ('b, 'a #output, unit) t -> 'b
   (**The usual [printf] function, prints to the standard output {!stdout}, i.e. normally
      to the screen. If you are lost, this is probably the function you're looking for.*)
   
-val eprintf: ('b, 'a output, unit) t -> 'b
+val eprintf: ('b, 'a #output, unit) t -> 'b
   (**The usual [eprintf] function, prints to the standard error output {!stderr}, used
      to display warnings and errors. Otherwise identical to {!printf}.*)
   
@@ -632,7 +667,7 @@ val sprintf:  ('a, unit, string) t -> 'a
       Note that any function called with [%a] should return strings, i.e.
       should have type [unit -> string].*)
   
-val sprintf2: ('a, 'b output, unit, string) format4 -> 'a
+val sprintf2: ('a, 'b #output, unit, string) format4 -> 'a
   (** A function which doesn't print its result but returns it as a string. Useful
       for building messages, for translation purposes or for display in a window,
       for instance.
@@ -646,7 +681,7 @@ val sprintf2: ('a, 'b output, unit, string) format4 -> 'a
   
 (** {6 General functions}*)
 
-val fprintf: 'a output -> ('b, 'a output, unit) t -> 'b
+val fprintf: ('a #output as 'out) -> ('b, 'out, unit) t -> 'b
   (**General function. This function prints to any output. Typically,
      if you are attempting to build a large output such as a file,
      this is probably the function you are looking for. If you are
@@ -659,7 +694,7 @@ val fprintf: 'a output -> ('b, 'a output, unit) t -> 'b
      function you are looking for.*)
 
 
-val ifprintf: _        -> ('b, 'a output, unit) t -> 'b
+val ifprintf: _        -> ('b, 'a #output, unit) t -> 'b
   (**As {!fprintf} but doesn't actually print anything.
      Sometimes useful for debugging.*)
   
@@ -668,21 +703,21 @@ val bprintf: Buffer.t  -> ('a, Buffer.t, unit) t -> 'a
      In particular, any unparser called with [%a] should
      write to a buffer rather than to an output*)
   
-val bprintf2: Buffer.t  -> ('b, 'a output, unit) t -> 'b
+val bprintf2: Buffer.t  -> ('b, 'a #output, unit) t -> 'b
   (**As {!printf} but writes to a buffer instead
      of printing to the output. By opposition to
      {!bprintf}, only the result is changed with
      respect to {!printf}, not the inner workings.*)
   
 (**{6 Functions with continuations}*)
-val kfprintf : ('a output -> 'b) -> 'a output -> ('c, 'a output, unit, 'b) format4 -> 'c
+val kfprintf : (('a #output as 'out) -> 'b) -> 'out -> ('c, 'out, unit, 'b) format4 -> 'c
   (**Same as [fprintf], but instead of returning immediately, passes the [output] to its first
      argument at the end of printing.*)
   
 val ksprintf: (string -> 'a) -> ('b, unit, string, 'a) format4 -> 'b
   (** Same as [sprintf] above, but instead of returning the string,
       passes it to the first argument. *)
-val ksprintf2: (string -> 'b) -> ('c, 'a output, unit, 'b) format4 -> 'c
+val ksprintf2: (string -> 'b) -> ('c, 'a #output, unit, 'b) format4 -> 'c
   (** Same as [sprintf2] above, but instead of returning the string,
       passes it to the first argument. *)
   
@@ -690,7 +725,7 @@ val kbprintf : (Buffer.t -> 'a) ->
   Buffer.t -> ('b, Buffer.t, unit, 'a) format4 -> 'b
   (** Same as [bprintf], but instead of returning immediately,
       passes the buffer to its first argument at the end of printing. *)
-val kbprintf2 : (Buffer.t -> 'b) ->  Buffer.t -> ('c, 'a output, unit, 'b) format4 -> 'c
+val kbprintf2 : (Buffer.t -> 'b) ->  Buffer.t -> ('c, 'a #output, unit, 'b) format4 -> 'c
   (** Same as [bprintf2], but instead of returning immediately,
       passes the buffer to its first argument at the end of printing.*)
   
@@ -750,8 +785,8 @@ end
 (**
    Optimized access to fields
 *)
-val get_output : _ output -> (string -> int -> int -> int)
-val get_flush  : _ output -> (unit -> unit)
+val get_output : 'a #output -> (string -> int -> int -> int)
+val get_flush  : 'a #output -> (unit -> unit)
 
 val lock : Concurrent.lock ref
 (**

@@ -303,7 +303,8 @@ val sexp_of_t : ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
   
-val print : ?first:string -> ?last:string -> ?sep:string -> ('a InnerIO.output -> 'b -> unit) ->  'a InnerIO.output -> 'b t -> unit
+val print : ?first:string -> ?last:string -> ?sep:string -> 
+  (('a #InnerIO.output as 'out) -> 'b -> unit) -> 'out -> 'b t -> unit
 
 
 (** {6 Functorial interface} *)
@@ -498,6 +499,7 @@ sig
 	The order of the elements in the input array is preserved. *)
 
   (** {7 Printing}*)
-  val print : ?first:string -> ?last:string -> ?sep:string -> ('a InnerIO.output -> 'b -> unit) ->  'a InnerIO.output -> 'b t -> unit
+  val print : ?first:string -> ?last:string -> ?sep:string -> 
+    (('a #InnerIO.output as 'out) -> 'b -> unit) -> 'out -> 'b t -> unit
 end
 

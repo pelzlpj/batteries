@@ -162,9 +162,9 @@ module type S =
     (** {7 Printing}*)
 
     val print :  ?first:string -> ?last:string -> ?sep:string -> 
-      ('a InnerIO.output -> key -> unit) -> 
-      ('a InnerIO.output -> 'c -> unit) -> 
-      'a InnerIO.output -> 'c t -> unit
+      (('a #InnerIO.output as 'out) -> key -> unit) -> 
+      ('out -> 'c -> unit) -> 
+      'out -> 'c t -> unit
 
     (** Output signature of the functor {!Map.Make}. *)
       

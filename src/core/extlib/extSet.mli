@@ -196,8 +196,7 @@ module type S =
     (** {7 Printing}*)
       
     val print :  ?first:string -> ?last:string -> ?sep:string -> 
-      ('a InnerIO.output -> elt -> unit) -> 
-      'a InnerIO.output -> t -> unit
+      (('a #InnerIO.output as 'out) -> elt -> unit) -> 'out -> t -> unit
 
 
       (** {6 Override modules}*)

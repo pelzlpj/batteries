@@ -47,7 +47,7 @@ exception Compression_error of string * exn option
 module type Decompressor =
 sig
 
-  val uncompress: IO.input -> IO.input
+  val uncompress: unit IO.input -> unit IO.input
     (** Wrap an input channel, decompressing transparently data when
 	reading from it.
 
@@ -57,11 +57,11 @@ sig
 
   val open_in: ?mode:File.open_in_flag list -> ?perm:File.permission ->
     string ->
-    IO.input
+    unit IO.input
       (** Shorthand: directly open a compressed file to read from it
 	  See {!File.open_in} *)
 
-      val with_in: IO.input -> (IO.input -> 'a) -> 'a
+  val with_in: unit IO.input -> (unit IO.input -> 'a) -> 'a
   (** [with_in input f] creates a new input [input'] which will
       transparently decompress data from [input], then invokes [f
       input'] to process that new input. Once [f] has returned or

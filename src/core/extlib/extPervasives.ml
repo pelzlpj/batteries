@@ -56,9 +56,9 @@ module Pervasives = struct
   let output_byte       = IO.write_byte
   let output_binary_int = IO.write_i32
   let output_value out v= ExtMarshal.Marshal.output out v
-  let close_out         = IO.close_out
+  let close_out         = IO.close
   let close_out_noerr out = 
-    try IO.close_out out
+    try IO.close out
     with _ -> ()
 
   let open_in           = File.open_in
@@ -73,9 +73,9 @@ module Pervasives = struct
     ignore (IO.really_input inp buf pos len)
   let input_byte        = IO.read_byte
   let input_binary_int  = IO.read_i32
-  let close_in          = IO.close_in
+  let close_in          = IO.close
   let close_in_noerr inp=
-    try IO.close_in inp
+    try IO.close inp
     with _ -> ()
   let input_value       = ExtMarshal.Marshal.input
 

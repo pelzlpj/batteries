@@ -670,7 +670,8 @@ val sexp_of_t : ('a -> Sexplib.Sexp.t) -> ('a, [>`Read]) t -> Sexplib.Sexp.t
   
 (** {7 Printing}*)
   
-val print : ?first:string -> ?last:string -> ?sep:string -> ('a IO.output -> 'b -> unit) ->  'a IO.output -> ('b, [>`Read]) t -> unit
+val print : ?first:string -> ?last:string -> ?sep:string ->
+  (('a #IO.output as 'out) -> 'b -> unit) -> 'out -> ('b, [>`Read]) t -> unit
   
   
   
@@ -765,7 +766,8 @@ end
     
   (** {7 Printing}*)
     
-  val print : ?first:string -> ?last:string -> ?sep:string -> ('a IO.output -> 'b -> unit) ->  'a IO.output -> 'b t -> unit
+  val print : ?first:string -> ?last:string -> ?sep:string ->
+    (('a #IO.output as 'out) -> 'b -> unit) ->  'out -> 'b t -> unit
 
   (** {6 Override modules}*)
 

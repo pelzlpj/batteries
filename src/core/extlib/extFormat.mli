@@ -449,7 +449,7 @@ type formatter = Format.formatter;;
    Given an output  [oc], a new formatter writing to
    that channel is obtained by calling [formatter_of_output oc].*)
 
-val formatter_of_output : _ output -> formatter;;
+val formatter_of_output : _ #output -> formatter;;
 (** [formatter_of_output out] returns a new formatter that
    writes to the corresponding output [out]. *)
 
@@ -626,7 +626,7 @@ val ksprintf : (string -> 'a) -> ('b, unit, string, 'a) format4 -> 'b;;
 
 (** {6 Deprecated}*)
 
-val set_formatter_out_channel : _ output -> unit;;
+val set_formatter_out_channel : _ #output -> unit;;
 (** Redirect the pretty-printer output to the given channel. *)
 
 val set_formatter_output_functions :
@@ -647,7 +647,7 @@ val get_formatter_output_functions :
 val kprintf : (string -> 'a) -> ('b, unit, string, 'a) format4 -> 'b;;
 (** A deprecated synonym for [ksprintf]. *)
 
-val formatter_of_out_channel : _ output -> formatter;;
+val formatter_of_out_channel : _ #output -> formatter;;
 (** [formatter_of_out_channel oc] returns a new formatter that
    writes to the corresponding channel [oc]. *)
 
@@ -676,7 +676,7 @@ val make_formatter :
    function [flush]. Hence, a formatter to the out channel [oc]
    is returned by [make_formatter (output oc) (fun () -> flush oc)]. *)
 
-val pp_set_formatter_out_channel : formatter -> _ output -> unit;;
+val pp_set_formatter_out_channel : formatter -> _ #output -> unit;;
 val pp_set_formatter_output_functions :
   formatter -> (string -> int -> int -> unit) -> (unit -> unit) -> unit;;
 val pp_get_formatter_output_functions :

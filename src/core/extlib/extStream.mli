@@ -82,13 +82,13 @@ val of_list : 'a list -> 'a t
 (** Return the stream holding the elements of the list in the same
    order. *)
 
-val of_input :   IO.input    -> char t
+val of_input : _ #IO.input -> char t
 (** Convert an [input] to a stream.*)
 
 
 (** {6 Stream consumers} *)
 
-val on_output:   'a IO.output-> char t -> unit
+val on_output: 'a #IO.output-> char t -> unit
 (** Convert an [output] to a stream.*)
 
 (** {6 Stream builders}
@@ -316,9 +316,9 @@ val of_list : 'a list -> 'a t
 val on_channel : out_channel -> char t -> unit
 (** Obsolete *)
 
-val of_input :   IO.input    -> char t
+val of_input : _ #IO.input -> char t
 
-val on_output:   'a IO.output-> char t -> unit
+val on_output: 'a #IO.output-> char t -> unit
 
 (** {6 Stream builders}
 

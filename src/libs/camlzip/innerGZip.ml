@@ -23,7 +23,7 @@ open Common
 open Extlib
 
 (* The API of Camlzip does not allow to create (or otherwise work on)
-   compressed chanells out of something else than legacy channels or
+   compressed channels out of something else than legacy channels or
    file names. It is not easily generalizable either, because several
    channel functions are used, and also specific exceptions (e.g.,
    End_of_file) catched.
@@ -44,7 +44,7 @@ let buffer_size = 1024
       buffered before reading (writing) again. *)
 
 type in_channel =
-    { in_chan: IO.input;
+    { in_chan: unit IO.input;
       in_buffer: string;
       mutable in_pos: int;
       mutable in_avail: int;

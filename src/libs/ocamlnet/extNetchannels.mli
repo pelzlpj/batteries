@@ -55,15 +55,15 @@ end
 
 (** Create an input Netchannel from a Batteries {!System.IO.input}
     channel *)
-class channel_of_input : IO.input -> rec_in_channel
+class channel_of_input : _ #IO.input -> rec_in_channel
 
 (** Create an output Netchannel from a Batteries {!System.IO.output}
     channel *)
-class ['a] channel_of_output : 'a IO.output -> ['a] acc_out_channel
+class ['a] channel_of_output : 'a #IO.output -> ['a] acc_out_channel
   
 (** Create a Batteries {!System.IO.input} channel from an input
     Netchannel *)
-val input_of_channel : rec_in_channel -> IO.input
+val input_of_channel : rec_in_channel -> unit IO.input
 
 (** Create a Batteries {!System.IO.output} channel from an output
     Netchannel. Using this method no value is accumulated in the

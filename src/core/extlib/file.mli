@@ -121,7 +121,7 @@ type open_in_flag =
   | `nonblock (**Open in non-blocking mode                                  *)
   | `mmap     (**Open in memory-mapped mode (experimental)*)                 ]
 
-val open_in : ?mode:(open_in_flag list) -> ?perm:permission -> string -> input
+val open_in : ?mode:(open_in_flag list) -> ?perm:permission -> string -> unit input
 (** [open_in file_name] opens the file named [file_name] for reading.
 
     {b Note} You will need to close the file manually. An alternative is
@@ -129,7 +129,7 @@ val open_in : ?mode:(open_in_flag list) -> ?perm:permission -> string -> input
 
     Naming conventions for files are platform-dependent.*)
 
-val with_file_in : ?mode:(open_in_flag list) -> ?perm:permission -> string -> (input -> 'a) -> 'a
+val with_file_in : ?mode:(open_in_flag list) -> ?perm:permission -> string -> (unit input -> 'a) -> 'a
 (** [with_file_in file_name f] opens the file named [file_name] for reading,
     invokes [f] to process the contents of that file then, once [f] has returned 
     or triggered an exception, closes the file before proceeding. *)

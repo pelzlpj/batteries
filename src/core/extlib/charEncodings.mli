@@ -633,7 +633,7 @@ val encoding_of_t : ('a, 'b) t -> 'b
 (**
    {7 Transcoders}
 *)
-val transcode_in : (input,'a) t -> ([< encoding] as 'b) -> (input,'b) t
+val transcode_in : (unit input,'a) t -> ([< encoding] as 'b) -> (unit input,'b) t
   (**Convert the contents of an input between encodings.
      
      [transcode_in inp enc] produces a new input, whose

@@ -122,5 +122,4 @@ val sexp_of_t : ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
 (** {7 Printing}*)
   
 val print :  ?first:string -> ?last:string -> ?sep:string -> 
-  ('a InnerIO.output -> 'c -> unit) -> 
-  'a InnerIO.output -> 'c t -> unit
+  (('a #InnerIO.output as 'out) -> 'c -> unit) -> 'out -> 'c t -> unit

@@ -99,7 +99,7 @@ let kbprintf k buf fmt = kfprintf (fun _ -> k buf) (IO.output_buffer buf) fmt
 
 let sprintf fmt =
   let oc = IO.output_buffer (Buffer.create 42) in
-  kfprintf IO.close_out oc fmt
+  kfprintf IO.close oc fmt
 let ksprintf k fmt =
   let oc = IO.output_buffer (Buffer.create 42) in
-  kfprintf (fun oc -> k (IO.close_out oc)) oc fmt
+  kfprintf (fun oc -> k (IO.close oc)) oc fmt

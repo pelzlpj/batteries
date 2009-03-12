@@ -54,11 +54,11 @@ let test_3 = ("File: open_in'd files should not autoclose",
                   (Printf.sprintf "Hoping: IO.No_more_input\n\tGot:    char \'%c\'" c)
 	      with
 	      | IO.No_more_input ->
-		let _ = IO.close_in f in Testing.Pass
+		let _ = IO.close f in Testing.Pass
 	      | IO.Input_closed ->
 		Testing.Fail "Hoping: IO.No_more_input\n\tGot:    IO.Input_closed"
 	      | _ ->
-		let _ = IO.close_in f in
+		let _ = IO.close f in
 		Testing.Fail "Hoping: IO.No_more_input\n\tGot:    (Different exception)"
 	    )
 

@@ -114,4 +114,4 @@ val sexp_of_t : ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
 
-val print: (InnerIO.input -> 'a -> unit) -> InnerIO.input -> 'a t -> unit
+val print: ((_ #InnerIO.input as 'out) -> 'a -> unit) -> 'out -> 'a t -> unit

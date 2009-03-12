@@ -294,7 +294,7 @@ val single_write : file_descr -> string -> int -> int -> int
 
 (** {6 Interfacing with the standard input/output library} *)
 
-val input_of_descr: ?autoclose:bool -> ?cleanup:bool -> file_descr -> InnerIO.input
+val input_of_descr: ?autoclose:bool -> ?cleanup:bool -> file_descr -> unit InnerIO.input
 (** Create an {!type:input} reading from the given descriptor.
     The {!type: input} is initially in binary mode; use
     [set_binary_mode_in ic false] if text mode is desired. 
@@ -322,7 +322,7 @@ val output_of_descr: ?cleanup:bool -> file_descr -> unit InnerIO.output
       file descriptor yourself to ensure proper cleanup.
 *)
 
-val descr_of_input : InnerIO.input -> file_descr
+val descr_of_input : unit InnerIO.input -> file_descr
 (** Return the descriptor corresponding to an input.
 
     Not all inputs have file descriptors. This function works
@@ -607,7 +607,7 @@ val create_process_env :
    [env] specifies the environment passed to the program. *)
 
 
-val open_process_in : ?autoclose: bool -> ?cleanup:bool -> string -> InnerIO.input
+val open_process_in : ?autoclose: bool -> ?cleanup:bool -> string -> unit InnerIO.input
 (** High-level pipe and process management. This function
     runs the given command in parallel with the program.
     The standard output of the command is redirected to a pipe,
@@ -640,7 +640,7 @@ val open_process_out : ?cleanup:bool -> string -> unit InnerIO.output
       will need to close the process yourself to ensure proper cleanup.
 *)
 
-val open_process : ?autoclose:bool -> ?cleanup:bool -> string -> InnerIO.input * unit InnerIO.output
+val open_process : ?autoclose:bool -> ?cleanup:bool -> string -> unit InnerIO.input * unit InnerIO.output
   (** 
       Same as {!Unix.open_process_out}, but redirects both the
       standard input and standard output of the command to pipes
@@ -664,7 +664,8 @@ val open_process : ?autoclose:bool -> ?cleanup:bool -> string -> InnerIO.input *
 
 
 val open_process_full :
-  ?autoclose:bool -> ?cleanup:bool -> string -> string array -> InnerIO.input * unit InnerIO.output * InnerIO.input
+  ?autoclose:bool -> ?cleanup:bool -> string -> string array -> 
+    unit InnerIO.input * unit InnerIO.output * unit InnerIO.input
   (** Similar to {!Unix.open_process}, but the second argument
       specifies the environment passed to the command.  The result is
       a triple of {!type:input}/{!type:output} connected respectively
@@ -683,7 +684,7 @@ val open_process_full :
       the process yourself to ensure proper cleanup.
   *)
 
-val close_process_in : InnerIO.input -> process_status
+val close_process_in : unit InnerIO.input -> process_status
   (** Close {!type:input} opened by {!Unix.open_process_in},
       wait for the associated command to terminate,
       and return its termination status.
@@ -701,7 +702,7 @@ val close_process_out : unit InnerIO.output -> process_status
       is not an {!type:output} opened by {!Unix.open_process_out}.
 *)
 
-val close_process : InnerIO.input * unit InnerIO.output -> process_status
+val close_process : unit InnerIO.input * unit InnerIO.output -> process_status
   (** Close {!type:input}/{!type:output} opened by {!Unix.open_process},
       wait for the associated command to terminate,
       and return its termination status.
@@ -711,7 +712,7 @@ val close_process : InnerIO.input * unit InnerIO.output -> process_status
   *)
 
 val close_process_full :
-  InnerIO.input * unit InnerIO.output * InnerIO.input -> process_status
+  unit InnerIO.input * unit InnerIO.output * unit InnerIO.input -> process_status
   (** Close i/o opened by {!Unix.open_process_full},
       wait for the associated command to terminate,
       and return its termination status. 
@@ -1196,7 +1197,7 @@ val setsockopt_float :
 (** {6 High-level network connection functions} *)
 
 
-val open_connection : ?autoclose:bool -> sockaddr -> InnerIO.input * unit InnerIO.output
+val open_connection : ?autoclose:bool -> sockaddr -> unit InnerIO.input * unit InnerIO.output
   (** Connect to a server at the given address.
       Return a pair of input/output connected to the server. The
       connection is closed whenever either the input or the output
@@ -1212,7 +1213,7 @@ val open_connection : ?autoclose:bool -> sockaddr -> InnerIO.input * unit InnerI
       locks), you probably want [autoclose] to be [true].
   *)
 
-val shutdown_connection : InnerIO.input -> unit
+val shutdown_connection : unit InnerIO.input -> unit
   (** 
       ``Shut down'' a connection established with {!Unix.open_connection};
       that is, transmit an end-of-file condition to the server reading
@@ -1222,7 +1223,8 @@ val shutdown_connection : InnerIO.input -> unit
       Use regular function {!IO.close_in} for closing connections.
 *)
 
-val establish_server : ?autoclose:bool -> ?cleanup:bool -> (InnerIO.input -> unit InnerIO.output -> unit) -> sockaddr -> unit
+val establish_server : ?autoclose:bool -> ?cleanup:bool -> 
+  (unit InnerIO.input -> unit InnerIO.output -> unit) -> sockaddr -> unit
   (** Establish a server on the given address.
 
       [establish_server f addr] establishes a server on address
@@ -1497,13 +1499,13 @@ val lock: Concurrent.lock ref
 
 (**{6 Obsolete stuff}*)
 
-val in_channel_of_descr: file_descr -> InnerIO.input
+val in_channel_of_descr: file_descr -> unit InnerIO.input
 (** @deprecated use {!input_of_descr}*)
 
 val out_channel_of_descr: file_descr -> unit InnerIO.output
 (** @deprecated use {!output_of_descr}. *)
 
-val descr_of_in_channel : InnerIO.input -> file_descr
+val descr_of_in_channel : unit InnerIO.input -> file_descr
 (** @deprecated use {!descr_of_input}. *)
 
 val descr_of_out_channel : unit InnerIO.output -> file_descr

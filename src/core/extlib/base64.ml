@@ -71,7 +71,7 @@ let encode ?(tbl=chars) ch =
 	in
 	IO.create_out ~write ~output
 		~flush:(fun () -> flush(); IO.flush ch)
-		~close:(fun() -> flush(); IO.close_out ch)
+		~close:(fun() -> flush(); IO.close ch)
 
 
 let decode ?(tbl=inv_chars) ch =
@@ -106,14 +106,14 @@ let decode ?(tbl=inv_chars) ch =
 	in
 	let close() =
 		count := 0;
-		IO.close_in ch
+		IO.close ch
 	in
 	IO.create_in ~read ~input ~close
 
 let str_encode ?(tbl=chars) s =
 	let ch = encode ~tbl (IO.output_string()) in
 	IO.nwrite ch s;
-	IO.close_out ch
+	IO.close ch
 
 let str_decode ?(tbl=inv_chars) s =
 	let ch = decode ~tbl (IO.input_string s) in

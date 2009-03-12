@@ -214,5 +214,5 @@ val gcd_big_int : big_int -> big_int -> big_int
 
     (** {7 Printing}*)
 
-    val print : 'a IO.output -> t -> unit
+    val print : 'a #IO.output -> t -> unit
 end

@@ -535,7 +535,8 @@ val sexp_of_node_t : ('a -> Sexplib.Sexp.t) -> 'a node_t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
   
-val print : ?first:string -> ?last:string -> ?sep:string ->('a InnerIO.output -> 'b -> unit) ->  'a InnerIO.output -> 'b t -> unit
+val print : ?first:string -> ?last:string -> ?sep:string ->
+  (('a #InnerIO.output as 'out) -> 'b -> unit) -> 'out -> 'b t -> unit
 
 
 (** {6 Override modules}*)

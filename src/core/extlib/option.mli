@@ -77,7 +77,7 @@ val sexp_of_t : ('a -> Sexplib.Sexp.t) -> 'a t -> Sexplib.Sexp.t
 
 (** {7 Printing}*)
 
-val print : ('a InnerIO.output -> 'b -> unit) -> 'a InnerIO.output -> 'b t -> unit
+val print : (('a #InnerIO.output as 'out) -> 'b -> unit) -> 'out -> 'b t -> unit
 
 (** Operations on options, with labels.*)
 module Labels : sig
