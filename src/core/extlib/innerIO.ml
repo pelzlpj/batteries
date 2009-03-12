@@ -141,15 +141,15 @@ class virtual ['a] std_io_base ~flush ~close ~forbidden () = object (self)
   method close : (unit -> 'a) = (fun () ->
                     match acc with
                     | None ->
-                        let result = 
-                          io_handle_table_remove (self :> io_handle);
-                          weak_iter (fun dep -> dep#close_unit ()) dependents;
+                        let result =
                           flush_f ();
                           close_f ()
                         in
-                        acc      <- Some result;
-                        close_f  <- forbidden;
-                        flush_f  <- noop;  (* Repeated flush is acceptable *)
+                        acc     <- Some result;
+                        close_f <- forbidden;
+                        flush_f <- noop;  (* Repeated flush is acceptable *)
+                        io_handle_table_remove (self :> io_handle);
+                        weak_iter (fun dep -> dep#close_unit ()) dependents;
                         result
                     | Some data ->
                         data)
